@@ -15,12 +15,12 @@ struct Handler;
 static SPICY_GAMES: ChannelId = ChannelId::new(1406825680741597286);
 static GAMES_CHAT: ChannelId = ChannelId::new(935677093642133564);
 
-async fn get_user_voice_channel(ctx: Context, guild_id: GuildId, user: User) -> Option<GuildChannel> {
+async fn get_user_voice_channel(ctx: &Context, guild_id: GuildId, user: User) -> Option<GuildChannel> {
     let Ok(channels) = guild_id.channels(&ctx.http).await else {
         return None;
     };
 
-    let Some((_, channel)) = channels.iter().find(|(_, channel)| {
+    channels.into_values().find(|channel| {
         if channel.kind != ChannelType::Voice {
             return false;
         }
@@ -33,14 +33,10 @@ async fn get_user_voice_channel(ctx: Context, guild_id: GuildId, user: User) -> 
             .iter()
             .find(|member| member.user.id == user.id)
             .is_some()
-    }) else {
-        return None;
-    };
-
-    return Some(channel.to_owned());
+    })
 }
 
-async fn sound(ctx: Context, command: CommandInteraction) {
+async fn sound(ctx: &Context, command: CommandInteraction) {
     let Some(guild_id) = command.guild_id else {
         return;
     };
@@ -73,7 +69,7 @@ impl EventHandler for Handler {
         };
 
         match command.data.name.as_str() {
-            "sound" => sound(ctx, command).await,
+            "sound" => sound(&ctx, command).await,
             _ => (),
         };
     }
