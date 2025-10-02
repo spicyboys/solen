@@ -1,8 +1,8 @@
-FROM rust:1.90 as builder
+FROM rust:1.90-trixie as builder
 WORKDIR /usr/src/solen
 COPY . .
 RUN cargo build --release
 
-FROM debian:bullseye-slim
+FROM debian:trixie-slim
 COPY --from=builder /usr/src/solen/target/release/solen /usr/bin/solen
 CMD ["solen"]
