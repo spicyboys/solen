@@ -1,4 +1,4 @@
-FROM rust:1.67 as builder
+FROM rust:1.90 as builder
 WORKDIR /usr/src/solen
 COPY . .
 RUN cargo build --release
