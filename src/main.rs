@@ -1,9 +1,11 @@
+mod commands;
+mod utils;
+
 use std::env;
 
+use rand::random_bool;
 use serenity::{
-    all::{
-        ChannelId, ChannelType, Command, CommandInteraction, CreateCommand, CreateMessage, GuildChannel, GuildId, Interaction, MessageBuilder, Ready, User
-    },
+    all::{ChannelId, CreateMessage, GuildChannel, Message, MessageBuilder},
     async_trait,
     prelude::*,
 };
@@ -15,65 +17,8 @@ struct Handler;
 static SPICY_GAMES: ChannelId = ChannelId::new(1406825680741597286);
 static GAMES_CHAT: ChannelId = ChannelId::new(935677093642133564);
 
-async fn get_user_voice_channel(ctx: &Context, guild_id: GuildId, user: User) -> Option<GuildChannel> {
-    let Ok(channels) = guild_id.channels(&ctx.http).await else {
-        return None;
-    };
-
-    channels.into_values().find(|channel| {
-        if channel.kind != ChannelType::Voice {
-            return false;
-        }
-
-        let Ok(members) = channel.members(&ctx.cache) else {
-            return false;
-        };
-
-        members
-            .iter()
-            .find(|member| member.user.id == user.id)
-            .is_some()
-    })
-}
-
-async fn sound(ctx: &Context, command: CommandInteraction) {
-    let Some(guild_id) = command.guild_id else {
-        return;
-    };
-
-    let Some(channel) = get_user_voice_channel(ctx, guild_id, command.user).await else {
-        return;
-    };
-
-    let manager = songbird::get(&ctx)
-        .await
-        .expect("Songbird Voice client placed in at initialisation.")
-        .clone();
-
-    if let Ok(handler_lock) = manager.join(guild_id, channel.id).await {
-        let handler = handler_lock.lock().await;
-        // handler.play(track);
-    };
-}
-
 #[async_trait]
 impl EventHandler for Handler {
-    async fn ready(&self, ctx: Context, _ready: Ready) {
-        let sound_command = CreateCommand::new("sound").description("Play a soundboard");
-        let _ = Command::create_global_command(&ctx.http, sound_command).await;
-    }
-
-    async fn interaction_create(&self, ctx: Context, interaction: Interaction) {
-        let Interaction::Command(command) = interaction else {
-            return;
-        };
-
-        match command.data.name.as_str() {
-            "sound" => sound(&ctx, command).await,
-            _ => (),
-        };
-    }
-
     async fn thread_create(&self, ctx: Context, thread: GuildChannel) {
         if thread.parent_id != Some(SPICY_GAMES) {
             return;
@@ -93,16 +38,43 @@ impl EventHandler for Handler {
         let message = CreateMessage::new().content(message_content);
         let _ = GAMES_CHAT.send_message(ctx.http, message).await;
     }
+
+    async fn message(&self, ctx: Context, message: Message) {
+        if message.content == "@grok is this true" {
+            if random_bool(0.5) {
+                let _ = message
+                    .channel_id
+                    .send_message(ctx.http, CreateMessage::new().content("yes"))
+                    .await;
+            }
+        }
+    }
 }
 
 #[tokio::main]
 async fn main() {
     // Login with a bot token from the environment
     let token = env::var("DISCORD_TOKEN").expect("Expected a token in the environment");
-    let intents = GatewayIntents::GUILDS;
+    let intents = GatewayIntents::MESSAGE_CONTENT
+        | GatewayIntents::GUILDS
+        | GatewayIntents::GUILD_VOICE_STATES;
+
+    let framework = poise::Framework::builder()
+        .options(poise::FrameworkOptions {
+            commands: vec![commands::sound()],
+            ..Default::default()
+        })
+        .setup(move |ctx, _ready, framework| {
+            Box::pin(async move {
+                poise::builtins::register_globally(ctx, &framework.options().commands).await?;
+                Ok(commands::Data {})
+            })
+        })
+        .build();
 
     let mut client = Client::builder(&token, intents)
         .event_handler(Handler)
+        .framework(framework)
         .register_songbird()
         .await
         .expect("Err creating client");
