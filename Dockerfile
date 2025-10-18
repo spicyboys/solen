@@ -1,5 +1,5 @@
 FROM rust:1.90-trixie as builder
-RUN apt-get install libopus-dev
+RUN apt-get update && apt-get install -y libopus-dev
 WORKDIR /usr/src/solen
 COPY . .
 RUN cargo build --release
