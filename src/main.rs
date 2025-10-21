@@ -44,7 +44,7 @@ impl EventHandler for Handler {
             if random_bool(0.5) {
                 let _ = message
                     .channel_id
-                    .send_message(ctx.http, CreateMessage::new().content("yes"))
+                    .send_message(ctx.http, CreateMessage::new().content("yes").reference_message(&message))
                     .await;
             }
         }
