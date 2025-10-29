@@ -55,7 +55,8 @@ impl EventHandler for Handler {
 async fn main() {
     // Login with a bot token from the environment
     let token = env::var("DISCORD_TOKEN").expect("Expected a token in the environment");
-    let intents = GatewayIntents::MESSAGE_CONTENT
+    let intents = GatewayIntents::GUILD_MESSAGES
+        | GatewayIntents::MESSAGE_CONTENT
         | GatewayIntents::GUILDS
         | GatewayIntents::GUILD_VOICE_STATES;
 
