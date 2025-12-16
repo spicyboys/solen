@@ -1,6 +1,3 @@
-mod commands;
-mod utils;
-
 use std::env;
 
 use rand::random_bool;
@@ -9,7 +6,6 @@ use serenity::{
     async_trait,
     prelude::*,
 };
-use songbird::SerenityInit;
 
 struct Handler;
 
@@ -60,23 +56,8 @@ async fn main() {
         | GatewayIntents::GUILDS
         | GatewayIntents::GUILD_VOICE_STATES;
 
-    let framework = poise::Framework::builder()
-        .options(poise::FrameworkOptions {
-            commands: vec![commands::sound()],
-            ..Default::default()
-        })
-        .setup(move |ctx, _ready, framework| {
-            Box::pin(async move {
-                poise::builtins::register_globally(ctx, &framework.options().commands).await?;
-                Ok(commands::Data {})
-            })
-        })
-        .build();
-
     let mut client = Client::builder(&token, intents)
         .event_handler(Handler)
-        .framework(framework)
-        .register_songbird()
         .await
         .expect("Err creating client");
 
