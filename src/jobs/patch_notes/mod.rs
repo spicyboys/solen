@@ -32,7 +32,7 @@ impl RssPatchNote for DeadlockPatchNotes {
         }
 
         if let Some(description) = item.content() {
-            embed = embed.description(html2md::parse_html(description));
+            embed = embed.description(rss::parse_html(description));
         }
 
         Ok(CreateMessage::new().embed(embed))
@@ -62,7 +62,7 @@ impl RssPatchNote for VintageStoryPatchNotes {
         }
 
         if let Some(description) = item.description() {
-            embed = embed.description(html2md::parse_html(description));
+            embed = embed.description(rss::parse_html(description));
         }
 
         Ok(CreateMessage::new().embed(embed))
@@ -91,7 +91,7 @@ impl RssPatchNote for ArcRaidersPatchNotes {
         }
 
         if let Some(description) = item.description() {
-            embed = embed.description(html2md::parse_html(description));
+            embed = embed.description(rss::parse_html(description));
         }
 
         Ok(CreateMessage::new().embed(embed))

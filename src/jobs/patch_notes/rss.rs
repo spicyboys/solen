@@ -1,5 +1,8 @@
 
+use std::{cell::LazyCell, collections::HashMap};
+
 use chrono::DateTime;
+use html2md::TagHandlerFactory;
 use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, QueryFilter};
 use serenity::all::{ChannelId, CreateMessage};
 use async_trait::async_trait;
@@ -85,4 +88,22 @@ impl<T: RssPatchNote + Send + Sync> PatchNotesJob for T {
         }
         Ok(())
     }
+}
+
+struct DummyHandlerFactory;
+
+impl TagHandlerFactory for DummyHandlerFactory {
+    fn instantiate(&self) -> Box<dyn html2md::TagHandler> {
+        Box::new(html2md::dummy::DummyHandler::default())
+    }
+}
+
+const HTML2MD_TAG_FACTORIES: LazyCell<HashMap<String, Box<dyn TagHandlerFactory>>> = LazyCell::new(|| {
+    let mut tag_factory: HashMap<String, Box<dyn TagHandlerFactory>> = HashMap::new();
+    tag_factory.insert(String::from("img"), Box::new(DummyHandlerFactory));
+    tag_factory
+});
+
+pub fn parse_html(html: &str) -> String {
+    html2md::parse_html_custom(html, &HTML2MD_TAG_FACTORIES)
 }
