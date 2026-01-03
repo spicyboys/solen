@@ -39,13 +39,12 @@ impl RssPatchNote for DeadlockPatchNotes {
     }
 }
 
-// Disabled for now - the feed is behind cloudflare.
-#[allow(dead_code)]
 struct VintageStoryPatchNotes;
 
 #[async_trait]
 impl RssPatchNote for VintageStoryPatchNotes {
-    const FEED_URL: &'static str = "https://www.vintagestory.at/blog.html/news?rss=1";
+    // const FEED_URL: &'static str = "https://www.vintagestory.at/blog.html/news?rss=1";
+    const FEED_URL: &'static str = "https://rss.app/feeds/fc8XKMKvfA6Ca1Vb.xml";
     const CHANNEL_ID: ChannelId = crate::channels::VINTAGE_STORY;
 
     async fn parse_feed_item(
@@ -99,8 +98,8 @@ impl RssPatchNote for ArcRaidersPatchNotes {
     }
 }
 
-pub const JOBS: [&dyn PatchNotesJob; 2] = [
+pub const JOBS: [&dyn PatchNotesJob; 3] = [
     &DeadlockPatchNotes,
-    // &VintageStoryPatchNotes,
+    &VintageStoryPatchNotes,
     &ArcRaidersPatchNotes,
 ];
