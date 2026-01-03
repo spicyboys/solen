@@ -70,8 +70,37 @@ impl RssPatchNote for VintageStoryPatchNotes {
     }
 }
 
+struct ArcRaidersPatchNotes;
 
-pub const JOBS: [&dyn PatchNotesJob; 1] = [
+#[async_trait]
+impl RssPatchNote for ArcRaidersPatchNotes {
+    const FEED_URL: &'static str = "https://steamcommunity.com/games/1808500/rss/";
+    const CHANNEL_ID: ChannelId = crate::channels::ARC_RAIDERS;
+
+    async fn parse_feed_item(
+        &self,
+        item: &::rss::Item,
+    ) -> Result<CreateMessage> {
+        let mut embed = CreateEmbed::new();
+
+        if let Some(title) = item.title() {
+            embed = embed.title(title);
+        }
+
+        if let Some(link) = item.link() {
+            embed = embed.url(link);
+        }
+
+        if let Some(description) = item.description() {
+            embed = embed.description(html2md::parse_html(description));
+        }
+
+        Ok(CreateMessage::new().embed(embed))
+    }
+}
+
+pub const JOBS: [&dyn PatchNotesJob; 2] = [
     &DeadlockPatchNotes,
     // &VintageStoryPatchNotes,
+    &ArcRaidersPatchNotes,
 ];
