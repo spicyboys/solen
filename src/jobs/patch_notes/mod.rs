@@ -70,8 +70,9 @@ impl RssPatchNote for VintageStoryPatchNotes {
         {
             match media.attrs().get("medium").map(String::as_str) {
                 Some("image") => {
+                    // Image formatted as relative URL without scheme
                     if let Some(url) = media.attrs().get("url") {
-                        embed = embed.image(url);
+                        embed = embed.image(format!("https{}", url));
                     }
                 }
                 _ => {}
