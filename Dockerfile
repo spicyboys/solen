@@ -4,6 +4,6 @@ COPY . .
 RUN cargo build --release
 
 FROM debian:trixie-slim
-RUN apt-get update && apt-get --only-upgrade install -y ca-certificates
+RUN apt-get update && apt-get install -y ca-certificates
 COPY --from=builder /usr/src/solen/target/release/solen /usr/bin/solen
 CMD ["solen"]
