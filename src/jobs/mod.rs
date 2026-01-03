@@ -18,8 +18,8 @@ pub async fn schedule(
     for job in patch_notes::JOBS.iter() {
         let job_ctx = ctx.clone();
         scheduler
-            .add(Job::new_one_shot_async(
-                Duration::from_secs(1),
+            .add(Job::new_repeated_async(
+                JOB_REPEAT_INTERVAL,
                 move |_, _| {
                     Box::pin({
                         let job_ctx = job_ctx.clone();
