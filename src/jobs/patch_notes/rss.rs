@@ -108,12 +108,15 @@ pub fn parse_html(html: &str) -> String {
     html2md::parse_html_custom(html, &HTML2MD_TAG_FACTORIES)
 }
 
+#[cfg(test)]
 mod tests {
+
+    use super::*;
     
     #[test]
     fn test_parse_html() {
         let html = r#"<p>This is a <strong>test</strong> description with an image: <img src="image.png" alt="An image"></p>"#;
-        let md = super::parse_html(html);
+        let md = parse_html(html);
         assert_eq!(md, "This is a **test** description with an image:");
     }
 }
