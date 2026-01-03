@@ -3,7 +3,21 @@ name = "solen"
 version = "0.1.0"
 edition = "2024"
 
+[workspace]
+members = [".", "migration"]
+
 [dependencies]
+anyhow = "1.0.100"
+async-trait = "0.1"
+chrono = "0.4.42"
+dotenv = "0.15.0"
+html2md = "0.2.15"
+migration = { path = "migration" }
+rand = "0.9.2"
+regex = "1.12.2"
+reqwest = "0.12.26"
+rss = "2.0.12"
+sea-orm = { version = "2.0.0-rc", features = [ "sqlx-postgres", "runtime-tokio-rustls", "macros" ] }
 serenity = "0.12"
 tokio = { version = "1.21.2", features = ["macros", "rt-multi-thread"] }
-rand = "0.9.2"
+tokio-cron-scheduler = "0.15.1"

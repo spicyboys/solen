@@ -1,22 +1,25 @@
-use std::env;
+mod models;
+mod jobs;
+mod channels;
+mod responders;
 
-use rand::random_bool;
+use std::env;
+use dotenv::dotenv;
+use sea_orm::Database;
 use serenity::{
-    all::{ChannelId, CreateMessage, GuildChannel, Message, MessageBuilder},
+    all::{CreateMessage, GuildChannel, Message, MessageBuilder},
     async_trait,
     prelude::*,
 };
+use migration::{Migrator, MigratorTrait};
+use tokio_cron_scheduler::JobScheduler;
 
 struct Handler;
-
-// Spicy Boys
-static SPICY_GAMES: ChannelId = ChannelId::new(1406825680741597286);
-static GAMES_CHAT: ChannelId = ChannelId::new(935677093642133564);
 
 #[async_trait]
 impl EventHandler for Handler {
     async fn thread_create(&self, ctx: Context, thread: GuildChannel) {
-        if thread.parent_id != Some(SPICY_GAMES) {
+        if thread.parent_id != Some(channels::SPICY_GAMES) {
             return;
         }
 
@@ -27,21 +30,18 @@ impl EventHandler for Handler {
         let message_content = MessageBuilder::new()
             .mention(&owner_id)
             .push(" has created a new thread in ")
-            .channel(SPICY_GAMES)
+            .channel(channels::SPICY_GAMES)
             .push(": ")
             .channel(thread.id)
             .build();
         let message = CreateMessage::new().content(message_content);
-        let _ = GAMES_CHAT.send_message(ctx.http, message).await;
+        let _ = channels::GAMES_CHAT.send_message(ctx.http, message).await;
     }
 
     async fn message(&self, ctx: Context, message: Message) {
-        if message.content == "@grok is this true" {
-            if random_bool(0.5) {
-                let _ = message
-                    .channel_id
-                    .send_message(ctx.http, CreateMessage::new().content("yes").reference_message(&message))
-                    .await;
+        for responder in responders::RESPONDERS.iter() {
+            if let Err(e) = responder.respond(&ctx, &message).await {
+                eprintln!("Responder error: {:?}", e);
             }
         }
     }
@@ -49,6 +49,13 @@ impl EventHandler for Handler {
 
 #[tokio::main]
 async fn main() {
+    dotenv().ok();
+
+    let db_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set");
+
+    let conn = Database::connect(db_url).await.unwrap();
+    Migrator::up(&conn, None).await.unwrap();
+
     // Login with a bot token from the environment
     let token = env::var("DISCORD_TOKEN").expect("Expected a token in the environment");
     let intents = GatewayIntents::GUILD_MESSAGES
@@ -60,6 +67,18 @@ async fn main() {
         .event_handler(Handler)
         .await
         .expect("Err creating client");
+
+    let sched = JobScheduler::new().await.unwrap();
+    jobs::schedule(&sched, jobs::JobContext {
+        discord_http: client.http.clone(),
+        db: conn,
+    }).await.unwrap();
+
+    println!("Starting scheduler...");
+
+    sched.start().await.expect("Failed to start scheduler");
+
+    println!("Starting discord client...");
 
     if let Err(why) = client.start().await {
         println!("Client error: {why:?}");
