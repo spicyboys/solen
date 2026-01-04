@@ -3,13 +3,12 @@
 use sea_orm::entity::prelude::*;
 
 #[derive(Clone, Debug, PartialEq, Eq, DeriveEntityModel)]
-#[sea_orm(table_name = "patch_notes")]
-#[sea_orm::model]
+#[sea_orm(table_name = "birthdays")]
 pub struct Model {
-    #[sea_orm(primary_key)]
-    pub id: i32,
-    pub feed: String,
-    pub latest_post: String,
+    #[sea_orm(primary_key, auto_increment = false)]
+    pub user_id: String,
+    pub month: i16,
+    pub day: i16,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
