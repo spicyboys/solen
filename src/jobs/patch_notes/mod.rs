@@ -72,7 +72,7 @@ impl RssPatchNote for VintageStoryPatchNotes {
                 Some("image") => {
                     // Image formatted as relative URL without scheme
                     if let Some(url) = media.attrs().get("url") {
-                        embed = embed.image(format!("https{}", url));
+                        embed = embed.image(format!("https:{}", url));
                     }
                 }
                 _ => {}
