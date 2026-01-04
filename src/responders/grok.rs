@@ -9,7 +9,7 @@ use std::cell::LazyCell;
 pub struct GrokResponder;
 
 const GROK_PROMPT_REGEX: LazyCell<Regex> = LazyCell::new(|| {
-    RegexBuilder::new(r"^@?grok is this (true|real)\??$")
+    RegexBuilder::new(r"^@?grok is this (true|real|chumble)\??$")
         .case_insensitive(true)
         .build()
         .unwrap()
