@@ -32,7 +32,7 @@ pub async fn schedule(scheduler: &JobScheduler, ctx: JobContext) -> Result<(), J
     }
 
     scheduler
-        .add(Job::new_async_tz("0 10 * * *", Central, move |_, _| {
+        .add(Job::new_async_tz("0 0 10 * * *", Central, move |_, _| {
             Box::pin({
                 let ctx = ctx.clone();
                 async move {
