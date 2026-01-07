@@ -2,6 +2,7 @@ mod models;
 mod jobs;
 mod channels;
 mod responders;
+mod emojis;
 
 use std::env;
 use dotenv::dotenv;
