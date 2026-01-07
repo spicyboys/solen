@@ -1,6 +1,6 @@
 use serenity::all::ChannelId;
 
-// Standard Spicy
+// Standard Spice
 pub static CONFIDENTIAL: ChannelId = ChannelId::new(682427424306233345);
 pub static SPICY_GAMES: ChannelId = ChannelId::new(1406825680741597286);
 
