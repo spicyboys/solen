@@ -42,8 +42,7 @@ struct VintageStoryPatchNotes;
 
 #[async_trait]
 impl RssPatchNote for VintageStoryPatchNotes {
-    // const FEED_URL: &'static str = "https://www.vintagestory.at/blog.html/news?rss=1";
-    const FEED_URL: &'static str = "https://rss.app/feeds/fc8XKMKvfA6Ca1Vb.xml";
+    const FEED_URL: &'static str = "https://www.vintagestory.at/blog.html/news?rss=1";
     const CHANNEL_ID: ChannelId = crate::channels::VINTAGE_STORY;
 
     async fn parse_feed_item(&self, item: &::rss::Item) -> Result<CreateMessage> {
