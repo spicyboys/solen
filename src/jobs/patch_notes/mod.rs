@@ -37,6 +37,7 @@ impl RssPatchNote for DeadlockPatchNotes {
     }
 }
 
+#[allow(dead_code)]
 struct VintageStoryPatchNotes;
 
 #[async_trait]
@@ -109,8 +110,7 @@ impl RssPatchNote for ArcRaidersPatchNotes {
     }
 }
 
-pub const JOBS: [&dyn PatchNotesJob; 3] = [
+pub const JOBS: [&dyn PatchNotesJob; 2] = [
     &DeadlockPatchNotes,
-    &VintageStoryPatchNotes,
     &ArcRaidersPatchNotes,
 ];
