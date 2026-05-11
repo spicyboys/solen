@@ -103,4 +103,34 @@ impl RssPatchNote for ArcRaidersPatchNotes {
     }
 }
 
-pub const JOBS: [&dyn PatchNotesJob; 2] = [&DeadlockPatchNotes, &ArcRaidersPatchNotes];
+struct SlayTheSpire2PatchNotes;
+
+#[async_trait]
+impl RssPatchNote for SlayTheSpire2PatchNotes {
+    const FEED_URL: &'static str = "https://steamcommunity.com/games/2868840/rss/";
+    const CHANNEL_ID: ChannelId = crate::channels::SLAY_THE_SPIRE;
+
+    async fn parse_feed_item(&self, item: &::rss::Item) -> Result<CreateMessage> {
+        let mut embed = CreateEmbed::new();
+
+        if let Some(title) = item.title() {
+            embed = embed.title(title);
+        }
+
+        if let Some(link) = item.link() {
+            embed = embed.url(link);
+        }
+
+        if let Some(description) = item.description() {
+            embed = embed.description(rss::parse_html(description));
+        }
+
+        Ok(CreateMessage::new().embed(embed))
+    }
+}
+
+pub const JOBS: [&dyn PatchNotesJob; 3] = [
+    &DeadlockPatchNotes,
+    &ArcRaidersPatchNotes,
+    &SlayTheSpire2PatchNotes,
+];
