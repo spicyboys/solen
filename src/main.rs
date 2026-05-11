@@ -1,18 +1,18 @@
-mod models;
-mod jobs;
 mod channels;
-mod responders;
 mod emojis;
+mod jobs;
+mod models;
+mod responders;
 
-use std::env;
 use dotenv::dotenv;
+use migration::{Migrator, MigratorTrait};
 use sea_orm::Database;
 use serenity::{
     all::{CreateMessage, GuildChannel, Message, MessageBuilder},
     async_trait,
     prelude::*,
 };
-use migration::{Migrator, MigratorTrait};
+use std::env;
 use tokio_cron_scheduler::JobScheduler;
 
 struct Handler;
@@ -70,10 +70,15 @@ async fn main() {
         .expect("Err creating client");
 
     let sched = JobScheduler::new().await.unwrap();
-    jobs::schedule(&sched, jobs::JobContext {
-        discord_http: client.http.clone(),
-        db: conn,
-    }).await.unwrap();
+    jobs::schedule(
+        &sched,
+        jobs::JobContext {
+            discord_http: client.http.clone(),
+            db: conn,
+        },
+    )
+    .await
+    .unwrap();
 
     println!("Starting scheduler...");
 

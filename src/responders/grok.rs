@@ -1,9 +1,9 @@
-use rand::random_bool;
-use regex::{Regex, RegexBuilder};
-use serenity::all::{Context, CreateMessage, Message};
 use crate::responders::Responder;
 use anyhow::Result;
 use async_trait::async_trait;
+use rand::random_bool;
+use regex::{Regex, RegexBuilder};
+use serenity::all::{Context, CreateMessage, Message};
 use std::sync::LazyLock;
 
 pub struct GrokResponder;
@@ -17,16 +17,17 @@ impl Responder for GrokResponder {
                 .build()
                 .unwrap()
         });
-        
+
         if GROK_PROMPT_REGEX.is_match(&message.content) {
-            let response = if random_bool(0.5) {
-                "yes"
-            } else {
-                "no"
-            };
+            let response = if random_bool(0.5) { "yes" } else { "no" };
             message
                 .channel_id
-                .send_message(&ctx.http, CreateMessage::new().content(response).reference_message(message))
+                .send_message(
+                    &ctx.http,
+                    CreateMessage::new()
+                        .content(response)
+                        .reference_message(message),
+                )
                 .await?;
         }
 
