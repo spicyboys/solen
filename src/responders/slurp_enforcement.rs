@@ -22,12 +22,12 @@ impl Responder for SlurpEnforcmentResponder {
             return Ok(());
         }
 
-        if message.content == "" {
+        if message.content.is_empty() {
             // Empty message means attachment only, which we assume is ok
             return Ok(());
         }
 
-        if let Err(_) = Url::parse(&message.content) {
+        if Url::parse(&message.content).is_err() {
             // Maybe something more complex later, but for now just react with the ban cat
             message.react(&ctx.http, emojis::CAT_BAN).await?;
             return Ok(());

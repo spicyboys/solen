@@ -1,14 +1,16 @@
-
 use std::{cell::LazyCell, collections::HashMap};
 
+use anyhow::{Result, bail};
+use async_trait::async_trait;
 use chrono::DateTime;
 use html2md::TagHandlerFactory;
 use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, QueryFilter};
 use serenity::all::{ChannelId, CreateMessage};
-use async_trait::async_trait;
-use anyhow::{Result, bail};
 
-use crate::{jobs::{JobContext, patch_notes::PatchNotesJob}, models::patch_notes};
+use crate::{
+    jobs::{JobContext, patch_notes::PatchNotesJob},
+    models::patch_notes,
+};
 
 #[async_trait]
 pub trait RssPatchNote: Sync {
@@ -32,8 +34,12 @@ impl<T: RssPatchNote + Send + Sync> PatchNotesJob for T {
         }
 
         items.sort_by(|a, b| {
-            let date_a = a.pub_date().and_then(|d| DateTime::parse_from_rfc2822(d).ok());
-            let date_b = b.pub_date().and_then(|d| DateTime::parse_from_rfc2822(d).ok());
+            let date_a = a
+                .pub_date()
+                .and_then(|d| DateTime::parse_from_rfc2822(d).ok());
+            let date_b = b
+                .pub_date()
+                .and_then(|d| DateTime::parse_from_rfc2822(d).ok());
             date_b.cmp(&date_a) // Descending order (most recent first)
         });
 
@@ -69,10 +75,16 @@ impl<T: RssPatchNote + Send + Sync> PatchNotesJob for T {
         };
 
         for item in posts.iter().rev() {
-            Self::CHANNEL_ID.send_message(&ctx.discord_http, self.parse_feed_item(item).await?).await?;
+            Self::CHANNEL_ID
+                .send_message(&ctx.discord_http, self.parse_feed_item(item).await?)
+                .await?;
         }
 
-        if let Some(latest_post_id) = items.first().and_then(|i| i.guid()).map(|g| g.value().to_string()) {
+        if let Some(latest_post_id) = items
+            .first()
+            .and_then(|i| i.guid())
+            .map(|g| g.value().to_string())
+        {
             if let Some(model) = model {
                 let mut model: patch_notes::ActiveModel = model.into();
                 model.latest_post = sea_orm::Set(latest_post_id);
@@ -94,15 +106,16 @@ struct DummyHandlerFactory;
 
 impl TagHandlerFactory for DummyHandlerFactory {
     fn instantiate(&self) -> Box<dyn html2md::TagHandler> {
-        Box::new(html2md::dummy::DummyHandler::default())
+        Box::new(html2md::dummy::DummyHandler)
     }
 }
 
-const HTML2MD_TAG_FACTORIES: LazyCell<HashMap<String, Box<dyn TagHandlerFactory>>> = LazyCell::new(|| {
-    let mut tag_factory: HashMap<String, Box<dyn TagHandlerFactory>> = HashMap::new();
-    tag_factory.insert(String::from("img"), Box::new(DummyHandlerFactory));
-    tag_factory
-});
+const HTML2MD_TAG_FACTORIES: LazyCell<HashMap<String, Box<dyn TagHandlerFactory>>> =
+    LazyCell::new(|| {
+        let mut tag_factory: HashMap<String, Box<dyn TagHandlerFactory>> = HashMap::new();
+        tag_factory.insert(String::from("img"), Box::new(DummyHandlerFactory));
+        tag_factory
+    });
 
 pub fn parse_html(html: &str) -> String {
     html2md::parse_html_custom(html, &HTML2MD_TAG_FACTORIES)
@@ -112,7 +125,7 @@ pub fn parse_html(html: &str) -> String {
 mod tests {
 
     use super::*;
-    
+
     #[test]
     fn test_parse_html() {
         let html = r#"<p>This is a <strong>test</strong> description with an image: <img src="image.png" alt="An image"></p>"#;

@@ -63,19 +63,13 @@ impl RssPatchNote for VintageStoryPatchNotes {
         if let Some(media) = item
             .extensions()
             .get("media")
-            .map(|m| m.get("content"))
-            .flatten()
-            .map(|v| v.first())
-            .flatten()
+            .and_then(|m| m.get("content"))
+            .and_then(|v| v.first())
+            && let Some("image") = media.attrs().get("medium").map(String::as_str)
         {
-            match media.attrs().get("medium").map(String::as_str) {
-                Some("image") => {
-                    // Image formatted as relative URL without scheme
-                    if let Some(url) = media.attrs().get("url") {
-                        embed = embed.image(format!("https:{}", url));
-                    }
-                }
-                _ => {}
+            // Image formatted as relative URL without scheme
+            if let Some(url) = media.attrs().get("url") {
+                embed = embed.image(format!("https:{}", url));
             }
         }
 
@@ -109,7 +103,4 @@ impl RssPatchNote for ArcRaidersPatchNotes {
     }
 }
 
-pub const JOBS: [&dyn PatchNotesJob; 2] = [
-    &DeadlockPatchNotes,
-    &ArcRaidersPatchNotes,
-];
+pub const JOBS: [&dyn PatchNotesJob; 2] = [&DeadlockPatchNotes, &ArcRaidersPatchNotes];
