@@ -1,9 +1,10 @@
 mod grok;
+mod ollama;
 mod slurp_enforcement;
 
+use anyhow::Result;
 use async_trait::async_trait;
 use serenity::all::{Context, Message};
-use anyhow::Result;
 
 #[async_trait]
 pub trait Responder: Send + Sync {
@@ -13,4 +14,5 @@ pub trait Responder: Send + Sync {
 pub const RESPONDERS: [&dyn Responder; 2] = [
     &grok::GrokResponder,
     &slurp_enforcement::SlurpEnforcmentResponder,
+    // &ollama::OllamaResponder::new("jaahas/qwen3.5-uncensored:4b"),
 ];
