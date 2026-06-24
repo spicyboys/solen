@@ -1,18 +1,17 @@
+mod tools;
+
 use crate::responders::Responder;
 use anyhow::Result;
 use async_trait::async_trait;
 use ollama_rs::{
     Ollama,
     coordinator::Coordinator,
-    generation::{chat::ChatMessage, parameters::ThinkType, tools::Tool},
+    generation::{chat::ChatMessage, parameters::ThinkType},
     models::ModelOptions,
 };
 use schemars::{JsonSchema, schema_for};
-use serde::{Deserialize, Serialize};
-use serenity::{
-    all::{Context, Message},
-    http::MessagePagination,
-};
+use serde::Serialize;
+use serenity::all::{Context, Message};
 use std::sync::LazyLock;
 
 /// Configuration for the Ollama responder
@@ -52,8 +51,15 @@ impl From<&Message> for DiscordMessage {
 #[async_trait]
 impl Responder for OllamaResponder {
     async fn respond(&self, ctx: &Context, message: &Message) -> Result<()> {
+        println!("Received message: {:?}", message.content);
         if !message.mentions_me(&ctx.http).await? {
             return Ok(()); // Don't respond to messages that mention the bot directly
+        }
+
+        let current_user = ctx.http.get_current_user().await?;
+
+        if message.author.bot {
+            return Ok(()); // Don't respond to messages from bots (including itself)
         }
 
         static OLLAMA: LazyLock<Ollama> = LazyLock::new(|| {
@@ -63,11 +69,15 @@ impl Responder for OllamaResponder {
                 .build()
         });
 
-        let options = ModelOptions::default().temperature(1.0);
+        let options = ModelOptions::default()
+            .temperature(1.0)
+            .num_ctx(16384)
+            .num_predict(2048);
 
         let mut coordinator = Coordinator::new(OLLAMA.clone(), self.model.to_string(), vec![])
-            .add_tool(DiscordChatHistoryTool { ctx: ctx.clone() })
-            .add_tool(DeleteDiscordMessageTool { ctx: ctx.clone() })
+            .add_tool(tools::discord_chat_history::DiscordChatHistoryTool { ctx: ctx.clone() })
+            .add_tool(tools::delete_discord_message::DeleteDiscordMessageTool { ctx: ctx.clone() })
+            .add_tool(tools::discord_user_lookup::DiscordUserLookupTool { ctx: ctx.clone() })
             .options(options)
             .think(ThinkType::Low);
 
@@ -86,13 +96,13 @@ impl Responder for OllamaResponder {
             Discord Context:
             - The maximum message length is 2,000 characters.
             - Current channel ID: {channel_id}
+            - Discord messages may contain tags, which take the form of <@user_id> for user mentions, <#channel_id> for
+              channel mentions, and <@&role_id> for role mentions.
 
             Response Style:
             - Prioritize direct answers.
-            - Use markdown when it improves readability.
-            - Keep code examples minimal.
             - Avoid repeating instructions or disclaimers unnecessarily.
-            - Never mention that you are an AI model or language model in your responses, or what company created you.
+            - Never mention that you are an AI model or language model in your responses unprompted.
 
             The schema for the Discord message format is as follows:
             {message_schema}
@@ -101,9 +111,18 @@ impl Responder for OllamaResponder {
             message_schema = serde_json::to_string(&schema_for!(DiscordMessage)).unwrap(),
         );
 
+        let agent_prompt = format!(
+            r#"
+            My name is {bot_name}. I am a Discord bot. My ID is {bot_id}.
+            "#,
+            bot_name = current_user.name,
+            bot_id = current_user.id,
+        );
+
         let response = coordinator
             .chat(vec![
                 ChatMessage::system(system_prompt),
+                ChatMessage::assistant(agent_prompt),
                 ChatMessage::user(format_message(message)),
             ])
             .await?;
@@ -122,114 +141,7 @@ impl Responder for OllamaResponder {
     }
 }
 
-struct DiscordChatHistoryTool {
-    ctx: Context,
-}
-
-#[derive(Debug, Clone, JsonSchema, Deserialize)]
-struct DiscordChatHistoryParams {
-    channel_id: String,
-    #[schemars(
-        description = "The message ID (NOT a timestamp) to retrieve messages before. If not provided, retrieves the most recent messages."
-    )]
-    before: Option<String>,
-    #[schemars(description = "The maximum number of messages to retrieve.")]
-    limit: Option<u8>,
-}
-
-impl Tool for DiscordChatHistoryTool {
-    fn name() -> &'static str {
-        "discord_chat_history"
-    }
-
-    fn description() -> &'static str {
-        "A tool for retrieving Discord chat history."
-    }
-
-    type Params = DiscordChatHistoryParams;
-
-    async fn call(
-        &mut self,
-        parameters: Self::Params,
-    ) -> ollama_rs::generation::tools::Result<String> {
-        println!(
-            "Retrieving messages from channel with parameters: {:?}",
-            parameters,
-        );
-
-        let channel_id = parameters.channel_id.parse::<u64>()?;
-        let before = parameters.before.map(|id| id.parse::<u64>()).transpose()?;
-
-        let messages = self
-            .ctx
-            .http
-            .get_messages(
-                channel_id.into(),
-                before.map(|id| MessagePagination::Before(id.into())),
-                parameters.limit,
-            )
-            .await?;
-
-        Ok(messages
-            .iter()
-            .map(format_message)
-            .collect::<Vec<String>>()
-            .join("\n"))
-    }
-}
-
 fn format_message(msg: &Message) -> String {
     serde_json::to_string(&DiscordMessage::from(msg))
         .unwrap_or_else(|_| "Error formatting message".into())
-}
-
-struct DeleteDiscordMessageTool {
-    ctx: Context,
-}
-
-#[derive(Debug, Clone, JsonSchema, Deserialize)]
-struct DeleteDiscordMessageParams {
-    channel_id: String,
-    message_id: String,
-    reason: Option<String>,
-}
-
-impl Tool for DeleteDiscordMessageTool {
-    fn name() -> &'static str {
-        "delete_discord_message"
-    }
-
-    fn description() -> &'static str {
-        "A tool for deleting a Discord message."
-    }
-
-    type Params = DeleteDiscordMessageParams;
-
-    async fn call(
-        &mut self,
-        parameters: Self::Params,
-    ) -> ollama_rs::generation::tools::Result<String> {
-        println!("Deleting message with parameters: {:?}", parameters,);
-
-        let channel_id = parameters.channel_id.parse::<u64>()?;
-        let message_id = parameters.message_id.parse::<u64>()?;
-
-        self.ctx
-            .http
-            .delete_message(
-                channel_id.into(),
-                message_id.into(),
-                parameters.reason.as_deref(),
-            )
-            .await
-            .map_err(|e| {
-                println!("{:?}", e);
-                e
-            })?;
-
-        Ok(format!(
-            "Deleted message with ID {} in channel {}",
-            message_id, channel_id
-        ))
-    }
 }

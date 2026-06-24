@@ -11,8 +11,8 @@ pub trait Responder: Send + Sync {
     async fn respond(&self, ctx: &Context, message: &Message) -> Result<()>;
 }
 
-pub const RESPONDERS: [&dyn Responder; 2] = [
+pub const RESPONDERS: [&dyn Responder; 3] = [
     &grok::GrokResponder,
     &slurp_enforcement::SlurpEnforcmentResponder,
-    // &ollama::OllamaResponder::new("jaahas/qwen3.5-uncensored:4b"),
+    &ollama::OllamaResponder::new("jaahas/qwen3.5-uncensored:4b"),
 ];
