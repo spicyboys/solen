@@ -3,10 +3,11 @@ mod tools;
 use crate::responders::Responder;
 use anyhow::Result;
 use async_trait::async_trait;
+use base64::Engine;
 use ollama_rs::{
     Ollama,
     coordinator::Coordinator,
-    generation::{chat::ChatMessage, parameters::ThinkType},
+    generation::{chat::ChatMessage, images::Image, parameters::ThinkType},
     models::ModelOptions,
 };
 use schemars::{JsonSchema, schema_for};
@@ -119,11 +120,21 @@ impl Responder for OllamaResponder {
             bot_id = current_user.id,
         );
 
+        let mut prompt = ChatMessage::user(format_message(message));
+
+        for attachment in &message.attachments {
+            let url = &attachment.url;
+            let response = reqwest::get(url).await?;
+            let bytes = response.bytes().await?;
+            let base64_image = base64::engine::general_purpose::STANDARD.encode(&bytes);
+            prompt = prompt.add_image(Image::from_base64(base64_image))
+        }
+
         let response = coordinator
             .chat(vec![
                 ChatMessage::system(system_prompt),
                 ChatMessage::assistant(agent_prompt),
-                ChatMessage::user(format_message(message)),
+                prompt,
             ])
             .await?;
 
