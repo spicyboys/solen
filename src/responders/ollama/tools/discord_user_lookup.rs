@@ -1,39 +1,31 @@
-use ollama_rs::generation::tools::Tool;
+use super::{Tool, ToolContext};
+use anyhow::Result;
 use schemars::JsonSchema;
 use serde::Deserialize;
-use serenity::all::prelude::Context;
 
-pub struct DiscordUserLookupTool {
-    pub ctx: Context,
-}
+pub struct DiscordUserLookupTool;
 
 #[derive(Debug, Clone, JsonSchema, Deserialize)]
 pub struct DiscordUserLookupParams {
     pub user_id: String,
 }
 
+#[async_trait::async_trait]
 impl Tool for DiscordUserLookupTool {
-    fn name() -> &'static str {
-        "discord_user_lookup"
-    }
-
-    fn description() -> &'static str {
-        "A tool for looking up Discord user information."
-    }
-
     type Params = DiscordUserLookupParams;
 
-    async fn call(
-        &mut self,
-        parameters: Self::Params,
-    ) -> ollama_rs::generation::tools::Result<String> {
+    const NAME: &'static str = "discord_user_lookup";
+    const DESCRIPTION: &'static str = "Look up a Discord user by ID.";
+
+    async fn call(ctx: &ToolContext, parameters: Self::Params) -> Result<String> {
         println!("Looking up user with ID: {}", parameters.user_id);
 
-        let Ok(user_id) = parameters.user_id.parse::<u64>() else {
-            return Ok(format!("Malformed user ID: {}", parameters.user_id));
-        };
+        let user_id = parameters
+            .user_id
+            .parse::<u64>()
+            .map_err(|_| anyhow::anyhow!("Malformed user ID: {}", parameters.user_id))?;
 
-        match self.ctx.http.get_user(user_id.into()).await {
+        match ctx.ctx.http.get_user(user_id.into()).await {
             Ok(user) => Ok(format!(
                 "User ID: {}\nUsername: {}\nBot: {}",
                 user.id, user.name, user.bot

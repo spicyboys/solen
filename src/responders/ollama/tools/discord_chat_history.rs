@@ -1,13 +1,12 @@
-use ollama_rs::generation::tools::Tool;
+use super::{Tool, ToolContext};
+use anyhow::Result;
 use schemars::JsonSchema;
 use serde::Deserialize;
-use serenity::{all::prelude::Context, http::MessagePagination};
+use serenity::http::MessagePagination;
 
 use crate::responders::ollama::format_message;
 
-pub struct DiscordChatHistoryTool {
-    pub ctx: Context,
-}
+pub struct DiscordChatHistoryTool;
 
 #[derive(Debug, Clone, JsonSchema, Deserialize)]
 pub struct DiscordChatHistoryParams {
@@ -20,34 +19,30 @@ pub struct DiscordChatHistoryParams {
     limit: Option<u8>,
 }
 
+#[async_trait::async_trait]
 impl Tool for DiscordChatHistoryTool {
-    fn name() -> &'static str {
-        "discord_chat_history"
-    }
-
-    fn description() -> &'static str {
-        "A tool for retrieving Discord chat history."
-    }
-
     type Params = DiscordChatHistoryParams;
 
-    async fn call(
-        &mut self,
-        parameters: Self::Params,
-    ) -> ollama_rs::generation::tools::Result<String> {
+    const NAME: &'static str = "discord_chat_history";
+    const DESCRIPTION: &'static str = "Retrieve recent Discord chat history from a channel.";
+
+    async fn call(ctx: &ToolContext, parameters: Self::Params) -> Result<String> {
         println!(
             "Retrieving messages from channel with parameters: {:?}",
             parameters,
         );
 
-        let Ok(channel_id) = parameters.channel_id.parse::<u64>() else {
-            return Ok(format!("Malformed channel ID: {}", parameters.channel_id));
-        };
-        let Ok(before) = parameters.before.map(|id| id.parse::<u64>()).transpose() else {
-            return Ok("Malformed 'before' message ID".to_string());
-        };
+        let channel_id = parameters
+            .channel_id
+            .parse::<u64>()
+            .map_err(|_| anyhow::anyhow!("Malformed channel ID: {}", parameters.channel_id))?;
+        let before = parameters
+            .before
+            .map(|id| id.parse::<u64>())
+            .transpose()
+            .map_err(|_| anyhow::anyhow!("Malformed 'before' message ID"))?;
 
-        let messages = match self
+        let messages = match ctx
             .ctx
             .http
             .get_messages(

@@ -1,21 +1,26 @@
 mod tools;
 
-use crate::responders::Responder;
+use std::io::{Write, stdout};
+
+use crate::responders::{Responder, ollama::tools::execute_tool_call};
 use anyhow::Result;
-use async_trait::async_trait;
-use base64::Engine;
-use ollama_rs::{
-    Ollama,
-    coordinator::Coordinator,
-    generation::{chat::ChatMessage, images::Image, parameters::ThinkType},
-    models::ModelOptions,
+use async_openai::{
+    Client,
+    config::OpenAIConfig,
+    types::chat::{
+        ChatCompletionMessageToolCall, ChatCompletionMessageToolCalls,
+        ChatCompletionRequestAssistantMessage, ChatCompletionRequestMessage,
+        ChatCompletionRequestSystemMessage, ChatCompletionRequestToolMessage,
+        ChatCompletionRequestUserMessage, CreateChatCompletionRequestArgs, FinishReason,
+    },
 };
+use async_trait::async_trait;
+use futures::StreamExt;
 use schemars::{JsonSchema, schema_for};
 use serde::Serialize;
 use serenity::all::{Context, Message};
-use std::sync::LazyLock;
 
-/// Configuration for the Ollama responder
+/// Configuration for the OpenAI-compatible responder
 pub struct OllamaResponder {
     /// The model to use (can be configured)
     pub model: &'static str,
@@ -54,37 +59,16 @@ impl Responder for OllamaResponder {
     async fn respond(&self, ctx: &Context, message: &Message) -> Result<()> {
         println!("Received message: {:?}", message.content);
         if !message.mentions_me(&ctx.http).await? {
-            return Ok(()); // Don't respond to messages that mention the bot directly
+            return Ok(());
         }
-
-        let current_user = ctx.http.get_current_user().await?;
 
         if message.author.bot {
-            return Ok(()); // Don't respond to messages from bots (including itself)
+            return Ok(());
         }
-
-        static OLLAMA: LazyLock<Ollama> = LazyLock::new(|| {
-            Ollama::builder()
-                .host("http://192.168.1.226".to_string())
-                .port(11434)
-                .build()
-        });
-
-        let options = ModelOptions::default()
-            .temperature(1.0)
-            .num_ctx(16384)
-            .num_predict(2048);
-
-        let mut coordinator = Coordinator::new(OLLAMA.clone(), self.model.to_string(), vec![])
-            .add_tool(tools::discord_chat_history::DiscordChatHistoryTool { ctx: ctx.clone() })
-            .add_tool(tools::delete_discord_message::DeleteDiscordMessageTool { ctx: ctx.clone() })
-            .add_tool(tools::discord_user_lookup::DiscordUserLookupTool { ctx: ctx.clone() })
-            .options(options)
-            .think(ThinkType::Low);
 
         let system_prompt = format!(
             r#"
-            You are a assistant interacting with numerous users in a Discord server.
+            You are an assistant interacting with numerous users in a Discord server.
 
             Behavior Rules:
             - Keep responses concise and useful unless the user asks for detailed explanations.
@@ -103,7 +87,6 @@ impl Responder for OllamaResponder {
             Response Style:
             - Prioritize direct answers.
             - Avoid repeating instructions or disclaimers unnecessarily.
-            - Never mention that you are an AI model or language model in your responses unprompted.
 
             The schema for the Discord message format is as follows:
             {message_schema}
@@ -112,6 +95,7 @@ impl Responder for OllamaResponder {
             message_schema = serde_json::to_string(&schema_for!(DiscordMessage)).unwrap(),
         );
 
+        let current_user = ctx.http.get_current_user().await?;
         let agent_prompt = format!(
             r#"
             My name is {bot_name}. I am a Discord bot. My ID is {bot_id}.
@@ -120,33 +104,146 @@ impl Responder for OllamaResponder {
             bot_id = current_user.id,
         );
 
-        let mut prompt = ChatMessage::user(format_message(message));
+        let client = Client::with_config(
+            OpenAIConfig::default()
+                .with_api_base("http://192.168.1.226:13305/api/v1")
+                .with_api_key("lemonade"),
+        );
 
-        for attachment in &message.attachments {
-            let url = &attachment.url;
-            let response = reqwest::get(url).await?;
-            let bytes = response.bytes().await?;
-            let base64_image = base64::engine::general_purpose::STANDARD.encode(&bytes);
-            prompt = prompt.add_image(Image::from_base64(base64_image))
+        let mut messages = vec![
+            ChatCompletionRequestSystemMessage::from(system_prompt).into(),
+            ChatCompletionRequestAssistantMessage::from(agent_prompt).into(),
+            ChatCompletionRequestUserMessage::from(format_message(message)).into(),
+        ];
+
+        // Create the initial request using ergonomic From traits
+        let request = CreateChatCompletionRequestArgs::default()
+            .max_completion_tokens(512u32)
+            .model(self.model)
+            .messages(messages.clone())
+            .tools(tools::TOOL_DEFINITIONS.clone())
+            .build()?;
+
+        let tool_ctx = tools::ToolContext { ctx: ctx.clone() };
+
+        // Stream the initial response and collect tool calls
+        let mut stream = client.chat().create_stream(request).await?;
+        let mut tool_calls = Vec::new();
+        let mut execution_handles = Vec::new();
+        let mut output = "".to_string();
+
+        // First stream: collect tool calls, print content, and start executing tool calls as soon as they're complete
+        while let Some(result) = stream.next().await {
+            let response = result?;
+
+            for choice in response.choices {
+                // Print any content deltas
+                if let Some(content) = &choice.delta.content {
+                    output.push_str(content);
+                }
+
+                // Collect tool call chunks
+                if let Some(tool_call_chunks) = choice.delta.tool_calls {
+                    for chunk in tool_call_chunks {
+                        let index = chunk.index as usize;
+
+                        // Ensure we have enough space in the vector
+                        while tool_calls.len() <= index {
+                            tool_calls.push(ChatCompletionMessageToolCall {
+                                id: String::new(),
+                                function: Default::default(),
+                            });
+                        }
+
+                        // Update the tool call with chunk data
+                        let tool_call = &mut tool_calls[index];
+                        if let Some(id) = chunk.id {
+                            tool_call.id = id;
+                        }
+                        if let Some(function_chunk) = chunk.function {
+                            if let Some(name) = function_chunk.name {
+                                tool_call.function.name = name;
+                            }
+                            if let Some(arguments) = function_chunk.arguments {
+                                tool_call.function.arguments.push_str(&arguments);
+                            }
+                        }
+                    }
+                }
+
+                // When tool calls are complete, start executing them immediately
+                if matches!(choice.finish_reason, Some(FinishReason::ToolCalls)) {
+                    // Spawn execution tasks for all collected tool calls
+                    for tool_call in tool_calls.iter() {
+                        let name = tool_call.function.name.clone();
+                        let args = tool_call.function.arguments.clone();
+                        let tool_call_id = tool_call.id.clone();
+
+                        let ctx = tool_ctx.clone();
+                        let handle = tokio::spawn(async move {
+                            let result = execute_tool_call(&ctx, &name, &args).await;
+                            (tool_call_id, result)
+                        });
+                        execution_handles.push(handle);
+                    }
+                }
+            }
         }
 
-        let response = coordinator
-            .chat(vec![
-                ChatMessage::system(system_prompt),
-                ChatMessage::assistant(agent_prompt),
-                prompt,
-            ])
-            .await?;
+        // Wait for all tool call executions to complete (outside the stream loop)
+        if !execution_handles.is_empty() {
+            let mut tool_responses = Vec::new();
+            for handle in execution_handles {
+                let (tool_call_id, response) = handle.await?;
+                tool_responses.push((tool_call_id, response));
+            }
 
-        if response.message.content.is_empty() {
-            println!(
-                "Received empty response. Thinking: {:?}",
-                response.message.thinking
+            // Build the follow-up request using ergonomic From traits
+            // Add assistant message with tool calls
+            let assistant_tool_calls: Vec<ChatCompletionMessageToolCalls> = tool_calls
+                .iter()
+                .map(|tc| tc.clone().into()) // From<ChatCompletionMessageToolCall>
+                .collect();
+            messages.push(
+                ChatCompletionRequestAssistantMessage {
+                    content: None,
+                    tool_calls: Some(assistant_tool_calls),
+                    ..Default::default()
+                }
+                .into(),
             );
-            return Ok(());
+
+            // Add tool response messages
+            for (tool_call_id, response) in tool_responses {
+                messages.push(
+                    ChatCompletionRequestToolMessage {
+                        content: response?.into(),
+                        tool_call_id,
+                    }
+                    .into(),
+                );
+            }
+
+            // Second stream: get the final response
+            let follow_up_request = CreateChatCompletionRequestArgs::default()
+                .max_completion_tokens(512u32)
+                .model(self.model)
+                .messages(messages)
+                .build()?;
+
+            let mut follow_up_stream = client.chat().create_stream(follow_up_request).await?;
+
+            while let Some(result) = follow_up_stream.next().await {
+                let response = result?;
+                for choice in response.choices {
+                    if let Some(content) = &choice.delta.content {
+                        output.push_str(content);
+                    }
+                }
+            }
         }
 
-        message.reply(&ctx.http, response.message.content).await?;
+        message.reply(&ctx.http, output).await?;
 
         Ok(())
     }

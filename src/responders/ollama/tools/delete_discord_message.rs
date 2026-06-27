@@ -1,11 +1,9 @@
-use ollama_rs::generation::tools::Tool;
+use super::{Tool, ToolContext};
+use anyhow::Result;
 use schemars::JsonSchema;
 use serde::Deserialize;
-use serenity::all::prelude::Context;
 
-pub struct DeleteDiscordMessageTool {
-    pub ctx: Context,
-}
+pub struct DeleteDiscordMessageTool;
 
 #[derive(Debug, Clone, JsonSchema, Deserialize)]
 pub struct DeleteDiscordMessageParams {
@@ -14,31 +12,26 @@ pub struct DeleteDiscordMessageParams {
     reason: Option<String>,
 }
 
+#[async_trait::async_trait]
 impl Tool for DeleteDiscordMessageTool {
-    fn name() -> &'static str {
-        "delete_discord_message"
-    }
-
-    fn description() -> &'static str {
-        "A tool for deleting a Discord message."
-    }
-
     type Params = DeleteDiscordMessageParams;
 
-    async fn call(
-        &mut self,
-        parameters: Self::Params,
-    ) -> ollama_rs::generation::tools::Result<String> {
+    const NAME: &'static str = "delete_discord_message";
+    const DESCRIPTION: &'static str = "Delete a Discord message from a channel.";
+
+    async fn call(ctx: &ToolContext, parameters: Self::Params) -> Result<String> {
         println!("Deleting message with parameters: {:?}", parameters,);
 
-        let Ok(channel_id) = parameters.channel_id.parse::<u64>() else {
-            return Ok(format!("Malformed channel ID: {}", parameters.channel_id));
-        };
-        let Ok(message_id) = parameters.message_id.parse::<u64>() else {
-            return Ok(format!("Malformed message ID: {}", parameters.message_id));
-        };
+        let channel_id = parameters
+            .channel_id
+            .parse::<u64>()
+            .map_err(|_| anyhow::anyhow!("Malformed channel ID: {}", parameters.channel_id))?;
+        let message_id = parameters
+            .message_id
+            .parse::<u64>()
+            .map_err(|_| anyhow::anyhow!("Malformed message ID: {}", parameters.message_id))?;
 
-        let response = self
+        let response = ctx
             .ctx
             .http
             .delete_message(
