@@ -1,7 +1,5 @@
 mod tools;
 
-use std::io::{Write, stdout};
-
 use crate::responders::{Responder, ollama::tools::execute_tool_call};
 use anyhow::Result;
 use async_openai::{
@@ -9,9 +7,9 @@ use async_openai::{
     config::OpenAIConfig,
     types::chat::{
         ChatCompletionMessageToolCall, ChatCompletionMessageToolCalls,
-        ChatCompletionRequestAssistantMessage, ChatCompletionRequestMessage,
-        ChatCompletionRequestSystemMessage, ChatCompletionRequestToolMessage,
-        ChatCompletionRequestUserMessage, CreateChatCompletionRequestArgs, FinishReason,
+        ChatCompletionRequestAssistantMessage, ChatCompletionRequestSystemMessage,
+        ChatCompletionRequestToolMessage, ChatCompletionRequestUserMessage,
+        CreateChatCompletionRequestArgs, FinishReason,
     },
 };
 use async_trait::async_trait;
@@ -116,82 +114,83 @@ impl Responder for OllamaResponder {
             ChatCompletionRequestUserMessage::from(format_message(message)).into(),
         ];
 
-        // Create the initial request using ergonomic From traits
-        let request = CreateChatCompletionRequestArgs::default()
-            .max_completion_tokens(512u32)
-            .model(self.model)
-            .messages(messages.clone())
-            .tools(tools::TOOL_DEFINITIONS.clone())
-            .build()?;
-
         let tool_ctx = tools::ToolContext { ctx: ctx.clone() };
 
-        // Stream the initial response and collect tool calls
-        let mut stream = client.chat().create_stream(request).await?;
-        let mut tool_calls = Vec::new();
-        let mut execution_handles = Vec::new();
-        let mut output = "".to_string();
+        let mut output;
+        loop {
+            output = "".to_string();
 
-        // First stream: collect tool calls, print content, and start executing tool calls as soon as they're complete
-        while let Some(result) = stream.next().await {
-            let response = result?;
+            let request = CreateChatCompletionRequestArgs::default()
+                .max_completion_tokens(512u32)
+                .model(self.model)
+                .messages(messages.clone())
+                .tools(tools::TOOL_DEFINITIONS.clone())
+                .build()?;
 
-            for choice in response.choices {
-                // Print any content deltas
-                if let Some(content) = &choice.delta.content {
-                    output.push_str(content);
-                }
+            let mut stream = client.chat().create_stream(request).await?;
+            let mut tool_calls = Vec::new();
+            let mut execution_handles = Vec::new();
+            while let Some(result) = stream.next().await {
+                let response = result?;
 
-                // Collect tool call chunks
-                if let Some(tool_call_chunks) = choice.delta.tool_calls {
-                    for chunk in tool_call_chunks {
-                        let index = chunk.index as usize;
+                for choice in response.choices {
+                    // Print any content deltas
+                    if let Some(content) = &choice.delta.content {
+                        output.push_str(content);
+                    }
 
-                        // Ensure we have enough space in the vector
-                        while tool_calls.len() <= index {
-                            tool_calls.push(ChatCompletionMessageToolCall {
-                                id: String::new(),
-                                function: Default::default(),
-                            });
-                        }
+                    // Collect tool call chunks
+                    if let Some(tool_call_chunks) = choice.delta.tool_calls {
+                        for chunk in tool_call_chunks {
+                            let index = chunk.index as usize;
 
-                        // Update the tool call with chunk data
-                        let tool_call = &mut tool_calls[index];
-                        if let Some(id) = chunk.id {
-                            tool_call.id = id;
-                        }
-                        if let Some(function_chunk) = chunk.function {
-                            if let Some(name) = function_chunk.name {
-                                tool_call.function.name = name;
+                            // Ensure we have enough space in the vector
+                            while tool_calls.len() <= index {
+                                tool_calls.push(ChatCompletionMessageToolCall {
+                                    id: String::new(),
+                                    function: Default::default(),
+                                });
                             }
-                            if let Some(arguments) = function_chunk.arguments {
-                                tool_call.function.arguments.push_str(&arguments);
+
+                            // Update the tool call with chunk data
+                            let tool_call = &mut tool_calls[index];
+                            if let Some(id) = chunk.id {
+                                tool_call.id = id;
+                            }
+                            if let Some(function_chunk) = chunk.function {
+                                if let Some(name) = function_chunk.name {
+                                    tool_call.function.name = name;
+                                }
+                                if let Some(arguments) = function_chunk.arguments {
+                                    tool_call.function.arguments.push_str(&arguments);
+                                }
                             }
                         }
                     }
-                }
 
-                // When tool calls are complete, start executing them immediately
-                if matches!(choice.finish_reason, Some(FinishReason::ToolCalls)) {
-                    // Spawn execution tasks for all collected tool calls
-                    for tool_call in tool_calls.iter() {
-                        let name = tool_call.function.name.clone();
-                        let args = tool_call.function.arguments.clone();
-                        let tool_call_id = tool_call.id.clone();
+                    // When tool calls are complete, start executing them immediately
+                    if matches!(choice.finish_reason, Some(FinishReason::ToolCalls)) {
+                        // Spawn execution tasks for all collected tool calls
+                        for tool_call in tool_calls.iter() {
+                            let name = tool_call.function.name.clone();
+                            let args = tool_call.function.arguments.clone();
+                            let tool_call_id = tool_call.id.clone();
 
-                        let ctx = tool_ctx.clone();
-                        let handle = tokio::spawn(async move {
-                            let result = execute_tool_call(&ctx, &name, &args).await;
-                            (tool_call_id, result)
-                        });
-                        execution_handles.push(handle);
+                            let ctx = tool_ctx.clone();
+                            let handle = tokio::spawn(async move {
+                                let result = execute_tool_call(&ctx, &name, &args).await;
+                                (tool_call_id, result)
+                            });
+                            execution_handles.push(handle);
+                        }
                     }
                 }
             }
-        }
 
-        // Wait for all tool call executions to complete (outside the stream loop)
-        if !execution_handles.is_empty() {
+            if execution_handles.is_empty() {
+                break;
+            }
+
             let mut tool_responses = Vec::new();
             for handle in execution_handles {
                 let (tool_call_id, response) = handle.await?;
@@ -222,24 +221,6 @@ impl Responder for OllamaResponder {
                     }
                     .into(),
                 );
-            }
-
-            // Second stream: get the final response
-            let follow_up_request = CreateChatCompletionRequestArgs::default()
-                .max_completion_tokens(512u32)
-                .model(self.model)
-                .messages(messages)
-                .build()?;
-
-            let mut follow_up_stream = client.chat().create_stream(follow_up_request).await?;
-
-            while let Some(result) = follow_up_stream.next().await {
-                let response = result?;
-                for choice in response.choices {
-                    if let Some(content) = &choice.delta.content {
-                        output.push_str(content);
-                    }
-                }
             }
         }
 

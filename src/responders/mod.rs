@@ -14,5 +14,5 @@ pub trait Responder: Send + Sync {
 pub const RESPONDERS: [&dyn Responder; 3] = [
     &grok::GrokResponder,
     &slurp_enforcement::SlurpEnforcmentResponder,
-    &ollama::OllamaResponder::new("Qwen3.5-4B-GGUF"),
+    &ollama::OllamaResponder::new("Qwen3.5-9B-Uncensored-HauhauCS-Aggressive-Q4_K_M"),
 ];
