@@ -1,17 +1,38 @@
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, anyhow};
 use sea_orm::{EntityTrait, Set};
 use url::Url;
 
-use crate::{Context as PoiseContext, jobs::patch_notes::rss, models::patch_notes};
+use crate::{
+    Context as PoiseContext, SPICY_BOYS,
+    jobs::patch_notes::rss,
+    models::patch_notes,
+    roles::{BOSSY_BOYS, MID_LEVEL_MANAGEMENT_BOYS},
+};
 
 pub async fn subscribe(
     ctx: PoiseContext<'_>,
     feed_url: String,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let feed_url = validate_and_normalize_feed_url(&feed_url)?;
+    if !(ctx
+        .author()
+        .has_role(&ctx.http(), SPICY_BOYS, BOSSY_BOYS)
+        .await?
+        || ctx
+            .author()
+            .has_role(&ctx.http(), SPICY_BOYS, MID_LEVEL_MANAGEMENT_BOYS)
+            .await?)
+    {
+        return Err(anyhow!("User is not an admin").into());
+    }
 
-    let response = reqwest::get(&feed_url).await?.bytes().await?;
-    let _channel = rss::parse_rss_feed_bytes(&response)?;
+    let feed_url = match validate_and_normalize_feed_url(&feed_url).await {
+        Ok(f) => f,
+        Err(e) => {
+            ctx.say(format!("Error subscribing to {feed_url} - {e}"))
+                .await?;
+            return Err(e.into());
+        }
+    };
 
     let channel_id = ctx.channel_id().get().to_string();
     let subscription = patch_notes::ActiveModel {
@@ -32,11 +53,19 @@ pub async fn subscribe(
     Ok(())
 }
 
-fn validate_and_normalize_feed_url(feed_url: &str) -> Result<String> {
+async fn validate_and_normalize_feed_url(feed_url: &str) -> Result<String> {
     let parsed = Url::parse(feed_url).context("feed URL must be a valid URL")?;
     if !matches!(parsed.scheme(), "http" | "https") {
         anyhow::bail!("feed URL must use http or https");
     }
+
+    let response = reqwest::get(feed_url)
+        .await
+        .context("Failed to query URL")?
+        .bytes()
+        .await
+        .context("could not get feed response body")?;
+    let _channel = rss::parse_rss_feed_bytes(&response).context("Malformed RSS feed")?;
 
     Ok(parsed.to_string())
 }

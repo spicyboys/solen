@@ -4,6 +4,7 @@ mod emojis;
 mod jobs;
 mod models;
 mod responders;
+mod roles;
 
 use dotenv::dotenv;
 use migration::{Migrator, MigratorTrait};
@@ -12,10 +13,13 @@ use sea_orm::Database;
 use serenity::{
     all::{CreateMessage, GuildChannel, Message, MessageBuilder},
     async_trait,
+    model::id::GuildId,
     prelude::*,
 };
 use std::env;
 use tokio_cron_scheduler::JobScheduler;
+
+pub static SPICY_BOYS: GuildId = GuildId::new(209487220837449729);
 
 pub struct Data {
     pub db: sea_orm::DatabaseConnection,
