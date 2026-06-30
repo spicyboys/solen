@@ -8,6 +8,7 @@ use sea_orm::entity::prelude::*;
 pub struct Model {
     #[sea_orm(primary_key)]
     pub id: i32,
+    pub channel_id: i64,
     pub feed: String,
     pub latest_post: String,
 }

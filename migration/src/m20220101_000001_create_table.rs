@@ -12,6 +12,7 @@ impl MigrationTrait for Migration {
                     .table("patch_notes")
                     .if_not_exists()
                     .col(pk_auto("id"))
+                    .col(big_integer("channel_id"))
                     .col(string("feed"))
                     .col(string("latest_post"))
                     .to_owned(),

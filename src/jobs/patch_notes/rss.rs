@@ -1,105 +1,58 @@
-use std::{cell::LazyCell, collections::HashMap};
+use std::collections::HashMap;
 
-use anyhow::{Result, bail};
-use async_trait::async_trait;
-use chrono::DateTime;
+use anyhow::{Context, Result};
 use html2md::TagHandlerFactory;
-use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, QueryFilter};
-use serenity::all::{ChannelId, CreateMessage};
+use serenity::all::{CreateEmbed, CreateMessage};
 
-use crate::{
-    jobs::{JobContext, patch_notes::PatchNotesJob},
-    models::patch_notes,
-};
+const EMBED_TITLE_LIMIT: usize = 256;
+const EMBED_DESCRIPTION_WARNING_THRESHOLD: usize = 2048;
+const EMBED_DESCRIPTION_TRUNCATION_LIMIT: usize = 1024;
+const EMBED_DESCRIPTION_TRUNCATION_NOTICE: &str = "\n\n[truncated]";
 
-#[async_trait]
-pub trait RssPatchNote: Sync {
-    const FEED_URL: &'static str;
-    const CHANNEL_ID: ChannelId;
-
-    async fn parse_feed_item(&self, item: &rss::Item) -> Result<CreateMessage>;
+pub fn parse_rss_feed_bytes(bytes: &[u8]) -> Result<rss::Channel> {
+    rss::Channel::read_from(bytes).context("invalid RSS feed")
 }
 
-#[async_trait]
-impl<T: RssPatchNote + Send + Sync> PatchNotesJob for T {
-    async fn fetch_latest_post(&self, ctx: JobContext) -> Result<()> {
-        let content = reqwest::get(Self::FEED_URL).await?.bytes().await?;
+pub fn build_message(item: &rss::Item) -> Result<CreateMessage> {
+    let mut embed = CreateEmbed::new();
 
-        let channel = rss::Channel::read_from(&content[..])?;
-
-        let mut items: Vec<_> = channel.items().iter().collect();
-
-        if items.is_empty() {
-            bail!("No items found in RSS feed");
-        }
-
-        items.sort_by(|a, b| {
-            let date_a = a
-                .pub_date()
-                .and_then(|d| DateTime::parse_from_rfc2822(d).ok());
-            let date_b = b
-                .pub_date()
-                .and_then(|d| DateTime::parse_from_rfc2822(d).ok());
-            date_b.cmp(&date_a) // Descending order (most recent first)
-        });
-
-        let model = patch_notes::Entity::find()
-            .filter(patch_notes::Column::Feed.eq(Self::FEED_URL))
-            .one(&ctx.db)
-            .await?;
-
-        // Determine which posts are new
-        let posts = if let Some(model) = &model {
-            let pos = items.iter().position(|i| {
-                if let Some(guid) = i.guid() {
-                    guid.value() == model.latest_post
-                } else {
-                    false
-                }
-            });
-
-            if let Some(pos) = pos {
-                if pos == 0 {
-                    // No new posts
-                    return Ok(());
-                }
-
-                &items[0..pos]
-            } else {
-                // All posts are new or the latest post is not found, only send the most recent one
-                &items[0..1]
-            }
-        } else {
-            // No previous record, only send the most recent one
-            &items[0..1]
-        };
-
-        for item in posts.iter().rev() {
-            Self::CHANNEL_ID
-                .send_message(&ctx.discord_http, self.parse_feed_item(item).await?)
-                .await?;
-        }
-
-        if let Some(latest_post_id) = items
-            .first()
-            .and_then(|i| i.guid())
-            .map(|g| g.value().to_string())
-        {
-            if let Some(model) = model {
-                let mut model: patch_notes::ActiveModel = model.into();
-                model.latest_post = sea_orm::Set(latest_post_id);
-                model.update(&ctx.db).await?;
-            } else {
-                let new_model = patch_notes::ActiveModel {
-                    feed: sea_orm::Set(Self::FEED_URL.to_string()),
-                    latest_post: sea_orm::Set(latest_post_id),
-                    ..Default::default()
-                };
-                patch_notes::Entity::insert(new_model).exec(&ctx.db).await?;
-            }
-        }
-        Ok(())
+    if let Some(title) = item.title() {
+        embed = embed.title(truncate_text(title, EMBED_TITLE_LIMIT));
     }
+
+    if let Some(link) = item.link() {
+        embed = embed.url(link);
+    }
+
+    let description = item.content().or_else(|| item.description());
+    if let Some(description) = description {
+        embed = embed.description(truncate_description(&parse_html(description)));
+    }
+
+    Ok(CreateMessage::new().embed(embed))
+}
+
+fn truncate_text(text: &str, limit: usize) -> String {
+    let mut chars = text.chars();
+    let mut truncated = String::new();
+
+    for ch in chars.by_ref() {
+        if truncated.chars().count() >= limit {
+            break;
+        }
+        truncated.push(ch);
+    }
+
+    truncated
+}
+
+fn truncate_description(description: &str) -> String {
+    if description.chars().count() <= EMBED_DESCRIPTION_WARNING_THRESHOLD {
+        return description.to_string();
+    }
+
+    let truncated = truncate_text(description, EMBED_DESCRIPTION_TRUNCATION_LIMIT);
+    format!("{truncated}{EMBED_DESCRIPTION_TRUNCATION_NOTICE}")
 }
 
 struct DummyHandlerFactory;
@@ -110,15 +63,13 @@ impl TagHandlerFactory for DummyHandlerFactory {
     }
 }
 
-const HTML2MD_TAG_FACTORIES: LazyCell<HashMap<String, Box<dyn TagHandlerFactory>>> =
-    LazyCell::new(|| {
-        let mut tag_factory: HashMap<String, Box<dyn TagHandlerFactory>> = HashMap::new();
-        tag_factory.insert(String::from("img"), Box::new(DummyHandlerFactory));
-        tag_factory
-    });
-
 pub fn parse_html(html: &str) -> String {
-    html2md::parse_html_custom(html, &HTML2MD_TAG_FACTORIES)
+    let mut map = HashMap::new();
+    map.insert(
+        "img".to_string(),
+        Box::new(DummyHandlerFactory) as Box<dyn TagHandlerFactory>,
+    );
+    html2md::parse_html_custom(html, &map)
 }
 
 #[cfg(test)]
@@ -131,5 +82,37 @@ mod tests {
         let html = r#"<p>This is a <strong>test</strong> description with an image: <img src="image.png" alt="An image"></p>"#;
         let md = parse_html(html);
         assert_eq!(md, "This is a **test** description with an image:");
+    }
+
+    #[test]
+    fn test_parse_rss_feed_bytes() {
+        let xml = r#"<?xml version="1.0" encoding="UTF-8"?>
+        <rss version="2.0"><channel><title>Example</title><link>https://example.com</link><description>Test</description><item><title>Item</title><link>https://example.com/item</link><description>Example</description></item></channel></rss>"#;
+
+        let parsed = parse_rss_feed_bytes(xml.as_bytes()).unwrap();
+        assert_eq!(parsed.title(), "Example");
+    }
+
+    #[test]
+    fn test_truncate_text_enforces_title_limit() {
+        let long_title = "a".repeat(300);
+
+        assert_eq!(truncate_text(&long_title, 256).chars().count(), 256);
+    }
+
+    #[test]
+    fn test_truncate_description_leaves_short_content_full() {
+        let description = "short description".to_string();
+
+        assert_eq!(truncate_description(&description), description);
+    }
+
+    #[test]
+    fn test_truncate_description_truncates_long_content() {
+        let long_description = "a".repeat(3000);
+        let truncated = truncate_description(&long_description);
+
+        assert!(truncated.chars().count() < long_description.chars().count());
+        assert!(truncated.ends_with(EMBED_DESCRIPTION_TRUNCATION_NOTICE));
     }
 }

@@ -1,4 +1,5 @@
 mod channels;
+mod commands;
 mod emojis;
 mod jobs;
 mod models;
@@ -6,6 +7,7 @@ mod responders;
 
 use dotenv::dotenv;
 use migration::{Migrator, MigratorTrait};
+use poise::serenity_prelude as serenity;
 use sea_orm::Database;
 use serenity::{
     all::{CreateMessage, GuildChannel, Message, MessageBuilder},
@@ -15,11 +17,26 @@ use serenity::{
 use std::env;
 use tokio_cron_scheduler::JobScheduler;
 
+pub struct Data {
+    pub db: sea_orm::DatabaseConnection,
+}
+
+type Error = Box<dyn std::error::Error + Send + Sync>;
+type Context<'a> = poise::Context<'a, Data, Error>;
+
+#[poise::command(slash_command, rename = "subscribe")]
+async fn subscribe_command(
+    ctx: Context<'_>,
+    #[description = "RSS feed URL to subscribe to"] feed_url: String,
+) -> Result<(), Error> {
+    commands::subscribe::subscribe(ctx, feed_url).await
+}
+
 struct Handler;
 
 #[async_trait]
 impl EventHandler for Handler {
-    async fn thread_create(&self, ctx: Context, thread: GuildChannel) {
+    async fn thread_create(&self, ctx: serenity::prelude::Context, thread: GuildChannel) {
         if thread.parent_id != Some(channels::SPICY_GAMES) {
             return;
         }
@@ -39,7 +56,7 @@ impl EventHandler for Handler {
         let _ = channels::GAMES_CHAT.send_message(ctx.http, message).await;
     }
 
-    async fn message(&self, ctx: Context, message: Message) {
+    async fn message(&self, ctx: serenity::prelude::Context, message: Message) {
         for responder in responders::RESPONDERS.iter() {
             if let Err(e) = responder.respond(&ctx, &message).await {
                 eprintln!("Responder error: {:?}", e);
@@ -64,8 +81,24 @@ async fn main() {
         | GatewayIntents::GUILDS
         | GatewayIntents::GUILD_VOICE_STATES;
 
+    let conn_for_framework = conn.clone();
+    let framework = poise::Framework::builder()
+        .options(poise::FrameworkOptions {
+            commands: vec![subscribe_command()],
+            ..Default::default()
+        })
+        .setup(move |ctx, _ready, framework| {
+            let db = conn_for_framework.clone();
+            Box::pin(async move {
+                poise::builtins::register_globally(ctx, &framework.options().commands).await?;
+                Ok(Data { db })
+            })
+        })
+        .build();
+
     let mut client = Client::builder(&token, intents)
         .event_handler(Handler)
+        .framework(framework)
         .await
         .expect("Err creating client");
 

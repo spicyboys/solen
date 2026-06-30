@@ -1,136 +1,77 @@
 pub mod rss;
 
-use crate::jobs::{JobContext, patch_notes::rss::RssPatchNote};
-use anyhow::Result;
-use async_trait::async_trait;
-use serenity::all::{ChannelId, CreateEmbed, CreateMessage};
+use anyhow::{Result, bail};
+use chrono::DateTime;
+use sea_orm::{ActiveModelTrait, EntityTrait, Set};
+use serenity::all::ChannelId;
 
-#[async_trait]
-pub trait PatchNotesJob: Send + Sync {
-    async fn fetch_latest_post(&self, ctx: JobContext) -> Result<()>;
-}
+use crate::{jobs::JobContext, models::patch_notes};
 
-struct DeadlockPatchNotes;
+pub async fn sync_patch_note_jobs(ctx: JobContext) -> Result<()> {
+    let jobs = patch_notes::Entity::find().all(&ctx.db).await?;
 
-#[async_trait]
-impl RssPatchNote for DeadlockPatchNotes {
-    const FEED_URL: &'static str =
-        "https://forums.playdeadlock.com/forums/changelog.10/~/index.rss";
-    const CHANNEL_ID: ChannelId = crate::channels::DEADLOCK;
-
-    async fn parse_feed_item(&self, item: &::rss::Item) -> Result<CreateMessage> {
-        let mut embed = CreateEmbed::new();
-
-        if let Some(title) = item.title() {
-            embed = embed.title(title);
+    for job in jobs {
+        if let Err(err) = sync_patch_note_job(&ctx, job.clone()).await {
+            eprintln!("Patch note job failed for {}: {:?}", job.feed, err);
         }
-
-        if let Some(link) = item.link() {
-            embed = embed.url(link);
-        }
-
-        if let Some(description) = item.content() {
-            embed = embed.description(rss::parse_html(description));
-        }
-
-        Ok(CreateMessage::new().embed(embed))
     }
+
+    Ok(())
 }
 
-#[allow(dead_code)]
-struct VintageStoryPatchNotes;
+async fn sync_patch_note_job(ctx: &JobContext, job: patch_notes::Model) -> Result<()> {
+    let content = reqwest::get(&job.feed).await?.bytes().await?;
+    let channel = ::rss::Channel::read_from(&content[..])?;
 
-#[async_trait]
-impl RssPatchNote for VintageStoryPatchNotes {
-    const FEED_URL: &'static str = "https://www.vintagestory.at/blog.html/news?rss=1";
-    const CHANNEL_ID: ChannelId = crate::channels::VINTAGE_STORY;
-
-    async fn parse_feed_item(&self, item: &::rss::Item) -> Result<CreateMessage> {
-        let mut embed = CreateEmbed::new();
-
-        if let Some(title) = item.title() {
-            embed = embed.title(title);
-        }
-
-        if let Some(link) = item.link() {
-            embed = embed.url(link);
-        }
-
-        if let Some(description) = item.description() {
-            embed = embed.description(rss::parse_html(description));
-        }
-
-        if let Some(media) = item
-            .extensions()
-            .get("media")
-            .and_then(|m| m.get("content"))
-            .and_then(|v| v.first())
-            && let Some("image") = media.attrs().get("medium").map(String::as_str)
-        {
-            // Image formatted as relative URL without scheme
-            if let Some(url) = media.attrs().get("url") {
-                embed = embed.image(format!("https:{}", url));
-            }
-        }
-
-        Ok(CreateMessage::new().embed(embed))
+    let mut items: Vec<_> = channel.items().iter().collect();
+    if items.is_empty() {
+        bail!("No items found in RSS feed");
     }
-}
 
-struct ArcRaidersPatchNotes;
+    items.sort_by(|a, b| {
+        let date_a = a
+            .pub_date()
+            .and_then(|d| DateTime::parse_from_rfc2822(d).ok());
+        let date_b = b
+            .pub_date()
+            .and_then(|d| DateTime::parse_from_rfc2822(d).ok());
+        date_b.cmp(&date_a)
+    });
 
-#[async_trait]
-impl RssPatchNote for ArcRaidersPatchNotes {
-    const FEED_URL: &'static str = "https://steamcommunity.com/games/1808500/rss/";
-    const CHANNEL_ID: ChannelId = crate::channels::ARC_RAIDERS;
-
-    async fn parse_feed_item(&self, item: &::rss::Item) -> Result<CreateMessage> {
-        let mut embed = CreateEmbed::new();
-
-        if let Some(title) = item.title() {
-            embed = embed.title(title);
+    let posts: Vec<_> = if job.latest_post.is_empty() {
+        vec![items[0]]
+    } else if let Some(pos) = items
+        .iter()
+        .position(|item| item_identifier(item) == job.latest_post)
+    {
+        if pos == 0 {
+            return Ok(());
         }
 
-        if let Some(link) = item.link() {
-            embed = embed.url(link);
-        }
+        items[0..pos].to_vec()
+    } else {
+        vec![items[0]]
+    };
 
-        if let Some(description) = item.description() {
-            embed = embed.description(rss::parse_html(description));
-        }
-
-        Ok(CreateMessage::new().embed(embed))
+    let channel_id = ChannelId::new(job.channel_id as u64);
+    for item in posts.iter().rev() {
+        channel_id
+            .send_message(&ctx.discord_http, rss::build_message(item)?)
+            .await?;
     }
-}
 
-struct SlayTheSpire2PatchNotes;
-
-#[async_trait]
-impl RssPatchNote for SlayTheSpire2PatchNotes {
-    const FEED_URL: &'static str = "https://steamcommunity.com/games/2868840/rss/";
-    const CHANNEL_ID: ChannelId = crate::channels::SLAY_THE_SPIRE;
-
-    async fn parse_feed_item(&self, item: &::rss::Item) -> Result<CreateMessage> {
-        let mut embed = CreateEmbed::new();
-
-        if let Some(title) = item.title() {
-            embed = embed.title(title);
-        }
-
-        if let Some(link) = item.link() {
-            embed = embed.url(link);
-        }
-
-        if let Some(description) = item.description() {
-            embed = embed.description(rss::parse_html(description));
-        }
-
-        Ok(CreateMessage::new().embed(embed))
+    if let Some(latest_post_id) = items.first().map(|item| item_identifier(item)) {
+        let mut model: patch_notes::ActiveModel = job.into();
+        model.latest_post = Set(latest_post_id);
+        model.update(&ctx.db).await?;
     }
+
+    Ok(())
 }
 
-pub const JOBS: [&dyn PatchNotesJob; 3] = [
-    &DeadlockPatchNotes,
-    &ArcRaidersPatchNotes,
-    &SlayTheSpire2PatchNotes,
-];
+fn item_identifier(item: &::rss::Item) -> String {
+    item.guid()
+        .map(|guid| guid.value().to_string())
+        .or_else(|| item.link().map(str::to_string))
+        .unwrap_or_default()
+}

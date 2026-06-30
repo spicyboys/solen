@@ -12,7 +12,7 @@ pub async fn send_birthday_message(ctx: JobContext) -> Result<()> {
         today.month(),
         today.day()
     );
-    
+
     let birthdays = birthdays::Entity::find()
         .filter(birthdays::Column::Day.eq(today.day() as i16))
         .filter(birthdays::Column::Month.eq(today.month() as i16))
