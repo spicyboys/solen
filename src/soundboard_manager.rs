@@ -9,7 +9,7 @@ use serenity::{
     prelude::*,
 };
 
-const CHANNEL_MEMBER_THRESHOLD: usize = 6;
+const CHANNEL_MEMBER_THRESHOLD: usize = 8;
 
 pub async fn voice_state_update(ctx: Context, old: Option<VoiceState>, new: VoiceState) {
     // Handle user connecting to a new channel
