@@ -5,6 +5,7 @@ mod jobs;
 mod models;
 mod responders;
 mod roles;
+mod soundboard_manager;
 
 use dotenv::dotenv;
 use migration::{Migrator, MigratorTrait};
@@ -13,11 +14,13 @@ use sea_orm::Database;
 use serenity::{
     all::{CreateMessage, GuildChannel, Message, MessageBuilder},
     async_trait,
-    model::id::GuildId,
+    model::{id::GuildId, voice::VoiceState},
     prelude::*,
 };
 use std::env;
 use tokio_cron_scheduler::JobScheduler;
+
+use crate::soundboard_manager::voice_state_update;
 
 pub static SPICY_BOYS: GuildId = GuildId::new(209487220837449729);
 
@@ -66,6 +69,15 @@ impl EventHandler for Handler {
                 eprintln!("Responder error: {:?}", e);
             }
         }
+    }
+
+    async fn voice_state_update(
+        &self,
+        ctx: serenity::prelude::Context,
+        old: Option<VoiceState>,
+        new: VoiceState,
+    ) {
+        voice_state_update(ctx, old, new).await;
     }
 }
 
