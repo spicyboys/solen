@@ -24,8 +24,9 @@ pub async fn voice_state_update(ctx: Context, old: Option<VoiceState>, new: Voic
 }
 
 async fn get_voice_channel(ctx: &Context, channel_id: Option<ChannelId>) -> Option<GuildChannel> {
-    if let Some(new_channel_id) = channel_id
-        && let Ok(Channel::Guild(channel)) = new_channel_id.to_channel(ctx.http()).await
+    if let Some(channel_id) = channel_id
+        && channel_id != crate::channels::POBLANO
+        && let Ok(Channel::Guild(channel)) = channel_id.to_channel(ctx.http()).await
         && channel.kind == ChannelType::Voice
     {
         Some(channel)
