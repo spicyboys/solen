@@ -3752,6 +3752,7 @@ dependencies = [
  "async-openai",
  "async-trait",
  "base64",
+ "bytes",
  "chrono",
  "chrono-tz",
  "dotenv",

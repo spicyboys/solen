@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
 use anyhow::{Context, Result};
+use bytes::Bytes;
 use html2md::TagHandlerFactory;
 use serenity::all::{CreateEmbed, CreateMessage};
 
@@ -8,6 +9,21 @@ const EMBED_TITLE_LIMIT: usize = 256;
 const EMBED_DESCRIPTION_WARNING_THRESHOLD: usize = 2048;
 const EMBED_DESCRIPTION_TRUNCATION_LIMIT: usize = 1024;
 const EMBED_DESCRIPTION_TRUNCATION_NOTICE: &str = "\n\n[truncated]";
+
+// Make silly lil feedhosts like wikipedia respect our authority
+// (and not think we're a bot even tho we are lamo)
+pub const FEED_USER_AGENT: &str = "solen-discord-bot (+https://github.com/spicyboys/solen)";
+
+pub async fn fetch_feed_bytes(url: &str) -> reqwest::Result<Bytes> {
+    reqwest::Client::builder()
+        .user_agent(FEED_USER_AGENT)
+        .build()?
+        .get(url)
+        .send()
+        .await?
+        .bytes()
+        .await
+}
 
 pub fn parse_rss_feed_bytes(bytes: &[u8]) -> Result<rss::Channel> {
     rss::Channel::read_from(bytes).context("invalid RSS feed")

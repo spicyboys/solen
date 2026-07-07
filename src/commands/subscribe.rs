@@ -59,12 +59,9 @@ async fn validate_and_normalize_feed_url(feed_url: &str) -> Result<String> {
         anyhow::bail!("feed URL must use http or https");
     }
 
-    let response = reqwest::get(feed_url)
+    let response = rss::fetch_feed_bytes(feed_url)
         .await
-        .context("Failed to query URL")?
-        .bytes()
-        .await
-        .context("could not get feed response body")?;
+        .context("Failed to query URL")?;
     let _channel = rss::parse_rss_feed_bytes(&response).context("Malformed RSS feed")?;
 
     Ok(parsed.to_string())

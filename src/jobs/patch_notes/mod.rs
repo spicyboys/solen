@@ -20,7 +20,7 @@ pub async fn sync_patch_note_jobs(ctx: JobContext) -> Result<()> {
 }
 
 async fn sync_patch_note_job(ctx: &JobContext, job: patch_notes::Model) -> Result<()> {
-    let content = reqwest::get(&job.feed).await?.bytes().await?;
+    let content = rss::fetch_feed_bytes(&job.feed).await?;
     let channel = ::rss::Channel::read_from(&content[..])?;
 
     let mut items: Vec<_> = channel.items().iter().collect();
