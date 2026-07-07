@@ -34,7 +34,7 @@ type Context<'a> = poise::Context<'a, Data, Error>;
 #[poise::command(slash_command, rename = "subscribe")]
 async fn subscribe_command(
     ctx: Context<'_>,
-    #[description = "RSS feed URL to subscribe to"] feed_url: String,
+    #[description = "RSS feed or ntfy.sh topic URL to subscribe to"] feed_url: String,
 ) -> Result<(), Error> {
     commands::subscribe::subscribe(ctx, feed_url).await
 }

@@ -4,10 +4,13 @@ use url::Url;
 
 use crate::{
     Context as PoiseContext, SPICY_BOYS,
-    jobs::patch_notes::rss,
+    jobs::patch_notes::{ntfy, rss},
     models::patch_notes,
     roles::{BOSSY_BOYS, MID_LEVEL_MANAGEMENT_BOYS},
 };
+
+const RSS_FEED_TYPE: &str = "rss";
+const NTFY_FEED_TYPE: &str = "ntfy";
 
 pub async fn subscribe(
     ctx: PoiseContext<'_>,
@@ -25,7 +28,7 @@ pub async fn subscribe(
         return Err(anyhow!("User is not an admin").into());
     }
 
-    let feed_url = match validate_and_normalize_feed_url(&feed_url).await {
+    let (normalized_url, feed_type) = match validate_and_normalize_feed_url(&feed_url).await {
         Ok(f) => f,
         Err(e) => {
             ctx.say(format!("Error subscribing to {feed_url} - {e}"))
@@ -37,8 +40,9 @@ pub async fn subscribe(
     let channel_id = ctx.channel_id().get().to_string();
     let subscription = patch_notes::ActiveModel {
         channel_id: Set(channel_id.parse::<i64>().unwrap_or_default()),
-        feed: Set(feed_url.clone()),
+        feed: Set(normalized_url.clone()),
         latest_post: Set(String::new()),
+        feed_type: Set(feed_type.to_string()),
         ..Default::default()
     };
 
@@ -47,22 +51,35 @@ pub async fn subscribe(
         .await
         .context("failed to save subscription")?;
 
-    ctx.say(format!("Subscribed this channel to RSS feed: {feed_url}"))
-        .await?;
+    let label = if feed_type == NTFY_FEED_TYPE {
+        "ntfy topic"
+    } else {
+        "RSS feed"
+    };
+    ctx.say(format!(
+        "Subscribed this channel to {label}: {normalized_url}"
+    ))
+    .await?;
 
     Ok(())
 }
 
-async fn validate_and_normalize_feed_url(feed_url: &str) -> Result<String> {
+async fn validate_and_normalize_feed_url(feed_url: &str) -> Result<(String, &'static str)> {
     let parsed = Url::parse(feed_url).context("feed URL must be a valid URL")?;
     if !matches!(parsed.scheme(), "http" | "https") {
         anyhow::bail!("feed URL must use http or https");
     }
 
-    let response = rss::fetch_feed_bytes(feed_url)
-        .await
-        .context("Failed to query URL")?;
-    let _channel = rss::parse_rss_feed_bytes(&response).context("Malformed RSS feed")?;
-
-    Ok(parsed.to_string())
+    if ntfy::is_ntfy_url(&parsed) {
+        ntfy::fetch_messages(parsed.as_str(), "none")
+            .await
+            .context("Failed to query ntfy topic")?;
+        Ok((parsed.to_string(), NTFY_FEED_TYPE))
+    } else {
+        let response = rss::fetch_feed_bytes(parsed.as_str())
+            .await
+            .context("Failed to query URL")?;
+        rss::parse_rss_feed_bytes(&response).context("Malformed RSS feed")?;
+        Ok((parsed.to_string(), RSS_FEED_TYPE))
+    }
 }

@@ -11,22 +11,32 @@ pub struct JobContext {
     pub db: sea_orm::DatabaseConnection,
 }
 
-const JOB_REPEAT_INTERVAL: Duration = Duration::from_secs(60 * 10);
+const RSS_POLL_INTERVAL: Duration = Duration::from_secs(60 * 10);
+const NTFY_POLL_INTERVAL: Duration = Duration::from_secs(60);
 
 pub async fn schedule(scheduler: &JobScheduler, ctx: JobContext) -> Result<(), JobSchedulerError> {
-    let patch_ctx = ctx.clone();
+    let rss_ctx = ctx.clone();
     scheduler
-        .add(Job::new_repeated_async(
-            JOB_REPEAT_INTERVAL,
-            move |_, _| {
-                let ctx = patch_ctx.clone();
-                Box::pin(async move {
-                    if let Err(e) = patch_notes::sync_patch_note_jobs(ctx).await {
-                        eprintln!("Patch note job failed: {:?}", e);
-                    }
-                })
-            },
-        )?)
+        .add(Job::new_repeated_async(RSS_POLL_INTERVAL, move |_, _| {
+            let ctx = rss_ctx.clone();
+            Box::pin(async move {
+                if let Err(e) = patch_notes::sync_rss_jobs(ctx).await {
+                    eprintln!("RSS patch note job failed: {:?}", e);
+                }
+            })
+        })?)
+        .await?;
+
+    let ntfy_ctx = ctx.clone();
+    scheduler
+        .add(Job::new_repeated_async(NTFY_POLL_INTERVAL, move |_, _| {
+            let ctx = ntfy_ctx.clone();
+            Box::pin(async move {
+                if let Err(e) = patch_notes::sync_ntfy_jobs(ctx).await {
+                    eprintln!("ntfy patch note job failed: {:?}", e);
+                }
+            })
+        })?)
         .await?;
 
     scheduler

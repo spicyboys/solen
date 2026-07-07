@@ -5,7 +5,7 @@ use bytes::Bytes;
 use html2md::TagHandlerFactory;
 use serenity::all::{CreateEmbed, CreateMessage};
 
-const EMBED_TITLE_LIMIT: usize = 256;
+pub(super) const EMBED_TITLE_LIMIT: usize = 256;
 const EMBED_DESCRIPTION_WARNING_THRESHOLD: usize = 2048;
 const EMBED_DESCRIPTION_TRUNCATION_LIMIT: usize = 1024;
 const EMBED_DESCRIPTION_TRUNCATION_NOTICE: &str = "\n\n[truncated]";
@@ -48,7 +48,7 @@ pub fn build_message(item: &rss::Item) -> Result<CreateMessage> {
     Ok(CreateMessage::new().embed(embed))
 }
 
-fn truncate_text(text: &str, limit: usize) -> String {
+pub(super) fn truncate_text(text: &str, limit: usize) -> String {
     let mut chars = text.chars();
     let mut truncated = String::new();
 
@@ -62,7 +62,7 @@ fn truncate_text(text: &str, limit: usize) -> String {
     truncated
 }
 
-fn truncate_description(description: &str) -> String {
+pub(super) fn truncate_description(description: &str) -> String {
     if description.chars().count() <= EMBED_DESCRIPTION_WARNING_THRESHOLD {
         return description.to_string();
     }
