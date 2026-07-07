@@ -39,6 +39,11 @@ async fn subscribe_command(
     commands::subscribe::subscribe(ctx, feed_url).await
 }
 
+#[poise::command(slash_command, rename = "unsubscribe")]
+async fn unsubscribe_command(ctx: Context<'_>) -> Result<(), Error> {
+    commands::unsubscribe::unsubscribe(ctx).await
+}
+
 struct Handler;
 
 #[async_trait]
@@ -100,7 +105,7 @@ async fn main() {
     let conn_for_framework = conn.clone();
     let framework = poise::Framework::builder()
         .options(poise::FrameworkOptions {
-            commands: vec![subscribe_command()],
+            commands: vec![subscribe_command(), unsubscribe_command()],
             ..Default::default()
         })
         .setup(move |ctx, _ready, framework| {
