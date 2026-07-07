@@ -4,7 +4,6 @@ mod emojis;
 mod jobs;
 mod models;
 mod responders;
-mod roles;
 mod soundboard_manager;
 
 use dotenv::dotenv;
@@ -14,7 +13,7 @@ use sea_orm::Database;
 use serenity::{
     all::{CreateMessage, GuildChannel, Message, MessageBuilder},
     async_trait,
-    model::{id::GuildId, voice::VoiceState},
+    model::voice::VoiceState,
     prelude::*,
 };
 use std::env;
@@ -22,27 +21,12 @@ use tokio_cron_scheduler::JobScheduler;
 
 use crate::soundboard_manager::voice_state_update;
 
-pub static SPICY_BOYS: GuildId = GuildId::new(209487220837449729);
-
 pub struct Data {
     pub db: sea_orm::DatabaseConnection,
 }
 
 type Error = Box<dyn std::error::Error + Send + Sync>;
 type Context<'a> = poise::Context<'a, Data, Error>;
-
-#[poise::command(slash_command, rename = "subscribe")]
-async fn subscribe_command(
-    ctx: Context<'_>,
-    #[description = "RSS feed or ntfy.sh topic URL to subscribe to"] feed_url: String,
-) -> Result<(), Error> {
-    commands::subscribe::subscribe(ctx, feed_url).await
-}
-
-#[poise::command(slash_command, rename = "unsubscribe")]
-async fn unsubscribe_command(ctx: Context<'_>) -> Result<(), Error> {
-    commands::unsubscribe::unsubscribe(ctx).await
-}
 
 struct Handler;
 
@@ -105,7 +89,7 @@ async fn main() {
     let conn_for_framework = conn.clone();
     let framework = poise::Framework::builder()
         .options(poise::FrameworkOptions {
-            commands: vec![subscribe_command(), unsubscribe_command()],
+            commands: vec![commands::subscribe(), commands::unsubscribe()],
             ..Default::default()
         })
         .setup(move |ctx, _ready, framework| {

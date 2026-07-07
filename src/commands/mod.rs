@@ -1,2 +1,5 @@
-pub mod subscribe;
-pub mod unsubscribe;
+mod subscribe;
+mod unsubscribe;
+
+pub use subscribe::subscribe;
+pub use unsubscribe::unsubscribe;

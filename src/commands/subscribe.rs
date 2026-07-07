@@ -1,33 +1,20 @@
-use anyhow::{Context, Result, anyhow};
+use std::fmt::Display;
+
+use anyhow::{Context, Result};
 use sea_orm::{EntityTrait, Set};
 use url::Url;
 
 use crate::{
-    Context as PoiseContext, SPICY_BOYS,
+    Context as PoiseContext,
     jobs::patch_notes::{ntfy, rss},
     models::patch_notes,
-    roles::{BOSSY_BOYS, MID_LEVEL_MANAGEMENT_BOYS},
 };
 
-const RSS_FEED_TYPE: &str = "rss";
-const NTFY_FEED_TYPE: &str = "ntfy";
-
+#[poise::command(slash_command, required_permissions = "ADMINISTRATOR")]
 pub async fn subscribe(
     ctx: PoiseContext<'_>,
-    feed_url: String,
+    #[description = "RSS feed or ntfy.sh topic URL to subscribe to"] feed_url: String,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    if !(ctx
-        .author()
-        .has_role(&ctx.http(), SPICY_BOYS, BOSSY_BOYS)
-        .await?
-        || ctx
-            .author()
-            .has_role(&ctx.http(), SPICY_BOYS, MID_LEVEL_MANAGEMENT_BOYS)
-            .await?)
-    {
-        return Err(anyhow!("User is not an admin").into());
-    }
-
     let (normalized_url, feed_type) = match validate_and_normalize_feed_url(&feed_url).await {
         Ok(f) => f,
         Err(e) => {
@@ -51,20 +38,29 @@ pub async fn subscribe(
         .await
         .context("failed to save subscription")?;
 
-    let label = if feed_type == NTFY_FEED_TYPE {
-        "ntfy topic"
-    } else {
-        "RSS feed"
-    };
     ctx.say(format!(
-        "Subscribed this channel to {label}: {normalized_url}"
+        "Subscribed this channel to {feed_type}: {normalized_url}"
     ))
     .await?;
 
     Ok(())
 }
 
-async fn validate_and_normalize_feed_url(feed_url: &str) -> Result<(String, &'static str)> {
+enum FeedType {
+    Ntfy,
+    Rss,
+}
+
+impl Display for FeedType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            FeedType::Ntfy => write!(f, "ntfy"),
+            FeedType::Rss => write!(f, "rss"),
+        }
+    }
+}
+
+async fn validate_and_normalize_feed_url(feed_url: &str) -> Result<(String, FeedType)> {
     let parsed = Url::parse(feed_url).context("feed URL must be a valid URL")?;
     if !matches!(parsed.scheme(), "http" | "https") {
         anyhow::bail!("feed URL must use http or https");
@@ -74,12 +70,12 @@ async fn validate_and_normalize_feed_url(feed_url: &str) -> Result<(String, &'st
         ntfy::fetch_messages(parsed.as_str(), "none")
             .await
             .context("Failed to query ntfy topic")?;
-        Ok((parsed.to_string(), NTFY_FEED_TYPE))
+        Ok((parsed.to_string(), FeedType::Ntfy))
     } else {
         let response = rss::fetch_feed_bytes(parsed.as_str())
             .await
             .context("Failed to query URL")?;
         rss::parse_rss_feed_bytes(&response).context("Malformed RSS feed")?;
-        Ok((parsed.to_string(), RSS_FEED_TYPE))
+        Ok((parsed.to_string(), FeedType::Rss))
     }
 }
