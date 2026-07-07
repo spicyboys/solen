@@ -1,5 +1,4 @@
 mod grok;
-mod ollama;
 mod slurp_enforcement;
 
 use anyhow::Result;
@@ -14,5 +13,4 @@ pub trait Responder: Send + Sync {
 pub const RESPONDERS: [&dyn Responder; 2] = [
     &grok::GrokResponder,
     &slurp_enforcement::SlurpEnforcmentResponder,
-    // &ollama::OllamaResponder::new("Qwen3.5-9B-Uncensored-HauhauCS-Aggressive-Q4_K_M"),
 ];
