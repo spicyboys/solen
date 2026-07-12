@@ -3,44 +3,34 @@ pub mod rss;
 
 use anyhow::{Result, bail};
 use chrono::DateTime;
-use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, QueryFilter, Set};
-use serenity::all::ChannelId;
+use sea_orm::{ActiveModelTrait, EntityTrait, Set};
+use serenity::{
+    all::{ChannelId, prelude::Mentionable},
+    builder::CreateEmbed,
+    model::id::UserId,
+};
 
-use crate::{jobs::JobContext, models::patch_notes};
+use crate::{
+    jobs::JobContext,
+    models::feeds::{self, FeedType},
+};
 
-const NTFY_FEED_TYPE: &str = "ntfy";
-
-pub async fn sync_rss_jobs(ctx: JobContext) -> Result<()> {
-    let jobs = patch_notes::Entity::find()
-        .filter(patch_notes::Column::FeedType.ne(NTFY_FEED_TYPE))
-        .all(&ctx.db)
-        .await?;
+pub async fn sync_feed_jobs(ctx: JobContext) -> Result<()> {
+    let jobs = feeds::Entity::find().all(&ctx.db).await?;
 
     for job in jobs {
-        if let Err(err) = sync_rss_job(&ctx, job.clone()).await {
-            eprintln!("RSS patch note job failed for {}: {:?}", job.feed, err);
-        }
+        if let Err(err) = match job.feed_type {
+            FeedType::Ntfy => sync_ntfy_job(&ctx, &job).await,
+            FeedType::Rss => sync_rss_job(&ctx, &job).await,
+        } {
+            eprintln!("Feed job failed for {}: {:?}", job.feed, err);
+        };
     }
 
     Ok(())
 }
 
-pub async fn sync_ntfy_jobs(ctx: JobContext) -> Result<()> {
-    let jobs = patch_notes::Entity::find()
-        .filter(patch_notes::Column::FeedType.eq(NTFY_FEED_TYPE))
-        .all(&ctx.db)
-        .await?;
-
-    for job in jobs {
-        if let Err(err) = sync_ntfy_job(&ctx, job.clone()).await {
-            eprintln!("ntfy patch note job failed for {}: {:?}", job.feed, err);
-        }
-    }
-
-    Ok(())
-}
-
-async fn sync_ntfy_job(ctx: &JobContext, job: patch_notes::Model) -> Result<()> {
+async fn sync_ntfy_job(ctx: &JobContext, job: &feeds::Model) -> Result<()> {
     let since = if job.latest_post.is_empty() {
         "all".to_string()
     } else {
@@ -59,17 +49,20 @@ async fn sync_ntfy_job(ctx: &JobContext, job: patch_notes::Model) -> Result<()> 
         &messages[..]
     };
 
+    let tag_embed = create_tag_embed(job);
     let topic = job.feed.rsplit('/').next().unwrap_or_default().to_string();
     let channel_id = ChannelId::new(job.channel_id as u64);
     for message in to_post {
-        channel_id
-            .send_message(&ctx.discord_http, ntfy::build_message(message, &topic))
-            .await?;
+        let mut message = ntfy::build_message(message, &topic);
+        if let Some(ref tag_embed) = tag_embed {
+            message = message.add_embed(tag_embed.clone());
+        }
+        channel_id.send_message(&ctx.discord_http, message).await?;
     }
 
     if let Some(latest) = messages.last() {
         let latest_id = latest.id.clone();
-        let mut model: patch_notes::ActiveModel = job.into();
+        let mut model: feeds::ActiveModel = job.clone().into();
         model.latest_post = Set(latest_id);
         model.update(&ctx.db).await?;
     }
@@ -77,7 +70,7 @@ async fn sync_ntfy_job(ctx: &JobContext, job: patch_notes::Model) -> Result<()> 
     Ok(())
 }
 
-async fn sync_rss_job(ctx: &JobContext, job: patch_notes::Model) -> Result<()> {
+async fn sync_rss_job(ctx: &JobContext, job: &feeds::Model) -> Result<()> {
     let content = rss::fetch_feed_bytes(&job.feed).await?;
     let channel = ::rss::Channel::read_from(&content[..])?;
 
@@ -111,15 +104,18 @@ async fn sync_rss_job(ctx: &JobContext, job: patch_notes::Model) -> Result<()> {
         vec![items[0]]
     };
 
+    let tag_embed = create_tag_embed(job);
     let channel_id = ChannelId::new(job.channel_id as u64);
     for item in posts.iter().rev() {
-        channel_id
-            .send_message(&ctx.discord_http, rss::build_message(item)?)
-            .await?;
+        let mut message = rss::build_message(item)?;
+        if let Some(ref tag_embed) = tag_embed {
+            message = message.add_embed(tag_embed.clone());
+        }
+        channel_id.send_message(&ctx.discord_http, message).await?;
     }
 
     if let Some(latest_post_id) = items.first().map(|item| item_identifier(item)) {
-        let mut model: patch_notes::ActiveModel = job.into();
+        let mut model: feeds::ActiveModel = job.clone().into();
         model.latest_post = Set(latest_post_id);
         model.update(&ctx.db).await?;
     }
@@ -132,4 +128,20 @@ fn item_identifier(item: &::rss::Item) -> String {
         .map(|guid| guid.value().to_string())
         .or_else(|| item.link().map(str::to_string))
         .unwrap_or_default()
+}
+
+fn create_tag_embed(job: &feeds::Model) -> Option<CreateEmbed> {
+    if job.notify.is_empty() {
+        None
+    } else {
+        let mut tag_string = String::new();
+        for notify in &job.notify {
+            let Ok(user_id) = notify.parse::<u64>() else {
+                continue;
+            };
+            tag_string.push_str(&UserId::new(user_id).mention().to_string());
+            tag_string.push('\n');
+        }
+        Some(CreateEmbed::new().description(tag_string))
+    }
 }

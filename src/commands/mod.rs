@@ -1,5 +1,3 @@
-mod subscribe;
-mod unsubscribe;
+mod feed;
 
-pub use subscribe::subscribe;
-pub use unsubscribe::unsubscribe;
+pub use feed::feed;

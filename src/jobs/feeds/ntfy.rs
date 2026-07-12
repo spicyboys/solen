@@ -39,7 +39,10 @@ pub fn is_ntfy_url(url: &Url) -> bool {
 /// Polls a `ntfy.sh` topic for messages, using ntfy's `since` param (a message id, duration,
 /// unix timestamp, or "all"/"none") to page through history.
 pub async fn fetch_messages(topic_url: &str, since: &str) -> Result<Vec<NtfyMessage>> {
-    let json_url = format!("{}/json?poll=1&since={since}", topic_url.trim_end_matches('/'));
+    let json_url = format!(
+        "{}/json?poll=1&since={since}",
+        topic_url.trim_end_matches('/')
+    );
 
     let bytes = reqwest::Client::builder()
         .user_agent(FEED_USER_AGENT)

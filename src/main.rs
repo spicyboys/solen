@@ -89,7 +89,7 @@ async fn main() {
     let conn_for_framework = conn.clone();
     let framework = poise::Framework::builder()
         .options(poise::FrameworkOptions {
-            commands: vec![commands::subscribe(), commands::unsubscribe()],
+            commands: vec![commands::feed()],
             ..Default::default()
         })
         .setup(move |ctx, _ready, framework| {

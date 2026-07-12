@@ -1,13 +1,11 @@
-use std::fmt::Display;
-
 use anyhow::{Context, Result};
 use sea_orm::{EntityTrait, Set};
 use url::Url;
 
 use crate::{
     Context as PoiseContext,
-    jobs::patch_notes::{ntfy, rss},
-    models::patch_notes,
+    jobs::feeds::{ntfy, rss},
+    models::feeds::{self, FeedType},
 };
 
 #[poise::command(slash_command, required_permissions = "ADMINISTRATOR")]
@@ -25,39 +23,23 @@ pub async fn subscribe(
     };
 
     let channel_id = ctx.channel_id().get().to_string();
-    let subscription = patch_notes::ActiveModel {
+    let subscription = feeds::ActiveModel {
         channel_id: Set(channel_id.parse::<i64>().unwrap_or_default()),
         feed: Set(normalized_url.clone()),
         latest_post: Set(String::new()),
-        feed_type: Set(feed_type.to_string()),
+        feed_type: Set(feed_type),
         ..Default::default()
     };
 
-    patch_notes::Entity::insert(subscription)
+    feeds::Entity::insert(subscription)
         .exec(&ctx.data().db)
         .await
         .context("failed to save subscription")?;
 
-    ctx.say(format!(
-        "Subscribed this channel to {feed_type}: {normalized_url}"
-    ))
-    .await?;
+    ctx.say(format!("Subscribed this channel to: {normalized_url}"))
+        .await?;
 
     Ok(())
-}
-
-enum FeedType {
-    Ntfy,
-    Rss,
-}
-
-impl Display for FeedType {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            FeedType::Ntfy => write!(f, "ntfy"),
-            FeedType::Rss => write!(f, "rss"),
-        }
-    }
 }
 
 async fn validate_and_normalize_feed_url(feed_url: &str) -> Result<(String, FeedType)> {

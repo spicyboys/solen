@@ -1,5 +1,5 @@
 mod birthday;
-pub mod patch_notes;
+pub mod feeds;
 
 use chrono_tz::US::Central;
 use std::{sync::Arc, time::Duration};
@@ -11,29 +11,16 @@ pub struct JobContext {
     pub db: sea_orm::DatabaseConnection,
 }
 
-const RSS_POLL_INTERVAL: Duration = Duration::from_secs(60 * 10);
-const NTFY_POLL_INTERVAL: Duration = Duration::from_secs(60);
+const FEED_POLL_INTERVAL: Duration = Duration::from_secs(60 * 10);
 
 pub async fn schedule(scheduler: &JobScheduler, ctx: JobContext) -> Result<(), JobSchedulerError> {
     let rss_ctx = ctx.clone();
     scheduler
-        .add(Job::new_repeated_async(RSS_POLL_INTERVAL, move |_, _| {
+        .add(Job::new_repeated_async(FEED_POLL_INTERVAL, move |_, _| {
             let ctx = rss_ctx.clone();
             Box::pin(async move {
-                if let Err(e) = patch_notes::sync_rss_jobs(ctx).await {
+                if let Err(e) = feeds::sync_feed_jobs(ctx).await {
                     eprintln!("RSS patch note job failed: {:?}", e);
-                }
-            })
-        })?)
-        .await?;
-
-    let ntfy_ctx = ctx.clone();
-    scheduler
-        .add(Job::new_repeated_async(NTFY_POLL_INTERVAL, move |_, _| {
-            let ctx = ntfy_ctx.clone();
-            Box::pin(async move {
-                if let Err(e) = patch_notes::sync_ntfy_jobs(ctx).await {
-                    eprintln!("ntfy patch note job failed: {:?}", e);
                 }
             })
         })?)
