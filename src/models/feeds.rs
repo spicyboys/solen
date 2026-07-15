@@ -10,17 +10,7 @@ pub struct Model {
     pub channel_id: i64,
     pub feed: String,
     pub latest_post: String,
-    pub feed_type: FeedType,
     pub notify: Vec<String>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, EnumIter, DeriveActiveEnum)]
-#[sea_orm(rs_type = "String", db_type = "Enum", enum_name = "feed_type")]
-pub enum FeedType {
-    #[sea_orm(string_value = "ntfy")]
-    Ntfy,
-    #[sea_orm(string_value = "rss")]
-    Rss,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

@@ -10,18 +10,25 @@ use serenity::{
     model::id::UserId,
 };
 
-use crate::{
-    jobs::JobContext,
-    models::feeds::{self, FeedType},
-};
+use crate::{jobs::JobContext, models::feeds};
+use url::Url;
 
 pub async fn sync_feed_jobs(ctx: JobContext) -> Result<()> {
     let jobs = feeds::Entity::find().all(&ctx.db).await?;
 
     for job in jobs {
-        if let Err(err) = match job.feed_type {
-            FeedType::Ntfy => sync_ntfy_job(&ctx, &job).await,
-            FeedType::Rss => sync_rss_job(&ctx, &job).await,
+        let parsed_feed_url = match Url::parse(&job.feed) {
+            Ok(url) => url,
+            Err(err) => {
+                eprintln!("Invalid feed URL for {}: {:?}", job.feed, err);
+                continue;
+            }
+        };
+
+        if let Err(err) = if ntfy::is_ntfy_url(&parsed_feed_url) {
+            sync_ntfy_job(&ctx, &job).await
+        } else {
+            sync_rss_job(&ctx, &job).await
         } {
             eprintln!("Feed job failed for {}: {:?}", job.feed, err);
         };
