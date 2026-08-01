@@ -1,4 +1,4 @@
-FROM rust:1.90-trixie as builder
+FROM rust:1.95-trixie AS builder
 WORKDIR /usr/src/solen
 COPY . .
 RUN cargo build --release
