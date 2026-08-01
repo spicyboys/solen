@@ -8,11 +8,7 @@ use sea_orm::{ActiveModelTrait, EntityTrait, Set};
 use url::Url;
 
 use crate::{jobs::JobContext, models::feeds};
-use serenity::{
-    all::{GenericChannelId, prelude::Mentionable},
-    builder::CreateEmbed,
-    model::id::UserId,
-};
+use serenity::all::GenericChannelId;
 
 pub async fn sync_feed_jobs(ctx: JobContext) -> Result<()> {
     let jobs = feeds::Entity::find().all(&ctx.db).await?;
@@ -57,15 +53,12 @@ async fn sync_ntfy_job(ctx: &JobContext, job: &feeds::Model) -> Result<()> {
         &messages[..]
     };
 
-    let tag_embed = create_tag_embed(job);
     let topic = job.feed.rsplit('/').next().unwrap_or_default().to_string();
     let channel_id = GenericChannelId::new(job.channel_id as u64);
     for message in to_post {
-        let mut message = ntfy::build_message(message, &topic);
-        if let Some(ref tag_embed) = tag_embed {
-            message = message.add_embed(tag_embed.clone());
-        }
-        channel_id.send_message(&ctx.discord_http, message).await?;
+        channel_id
+            .send_message(&ctx.discord_http, ntfy::build_message(message, &topic))
+            .await?;
     }
 
     if let Some(latest) = messages.last() {
@@ -112,14 +105,11 @@ async fn sync_rss_job(ctx: &JobContext, job: &feeds::Model) -> Result<()> {
         vec![items[0]]
     };
 
-    let tag_embed = create_tag_embed(job);
     let channel_id = GenericChannelId::new(job.channel_id as u64);
     for item in posts.iter().rev() {
-        let mut message = rss::build_message(item)?;
-        if let Some(ref tag_embed) = tag_embed {
-            message = message.add_embed(tag_embed.clone());
-        }
-        channel_id.send_message(&ctx.discord_http, message).await?;
+        channel_id
+            .send_message(&ctx.discord_http, rss::build_message(item)?)
+            .await?;
     }
 
     if let Some(latest_post_id) = items.first().map(|item| item_identifier(item)) {
@@ -136,20 +126,4 @@ fn item_identifier(item: &::rss::Item) -> String {
         .map(|guid| guid.value().to_string())
         .or_else(|| item.link().map(str::to_string))
         .unwrap_or_default()
-}
-
-fn create_tag_embed(job: &feeds::Model) -> Option<CreateEmbed<'static>> {
-    if job.notify.is_empty() {
-        None
-    } else {
-        let mut tag_string = String::new();
-        for notify in &job.notify {
-            let Ok(user_id) = notify.parse::<u64>() else {
-                continue;
-            };
-            tag_string.push_str(&UserId::new(user_id).mention().to_string());
-            tag_string.push('\n');
-        }
-        Some(CreateEmbed::new().description(tag_string))
-    }
 }

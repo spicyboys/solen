@@ -1,16 +1,14 @@
-mod notify;
 mod subscribe;
 mod unsubscribe;
 
 use anyhow::Result;
-use notify::notify;
 use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
 use subscribe::subscribe;
 use unsubscribe::unsubscribe;
 
 use crate::{Context as PoiseContext, models::feeds};
 
-#[poise::command(slash_command, subcommands("subscribe", "unsubscribe", "notify"))]
+#[poise::command(slash_command, subcommands("subscribe", "unsubscribe"))]
 pub async fn feed(_: PoiseContext<'_>) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     Ok(())
 }

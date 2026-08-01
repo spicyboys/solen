@@ -10,7 +10,6 @@ pub struct Model {
     pub channel_id: i64,
     pub feed: String,
     pub latest_post: String,
-    pub notify: Vec<String>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
