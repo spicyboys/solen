@@ -5,6 +5,7 @@ mod m20260104_014515_create_birthdays_table;
 mod m20260629_000001_add_channel_id_to_patch_notes;
 mod m20260712_205144_feed_subscription_notifications;
 mod m20260712_212423_patch_notes_to_feeds;
+mod m20260731_000001_create_archived_soundboards_table;
 
 pub struct Migrator;
 
@@ -17,6 +18,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260629_000001_add_channel_id_to_patch_notes::Migration),
             Box::new(m20260712_205144_feed_subscription_notifications::Migration),
             Box::new(m20260712_212423_patch_notes_to_feeds::Migration),
+            Box::new(m20260731_000001_create_archived_soundboards_table::Migration),
         ]
     }
 }

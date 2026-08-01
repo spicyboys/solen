@@ -1,7 +1,9 @@
 use anyhow::{Context, Result};
+use poise::serenity_prelude as serenity;
 use serde::Deserialize;
-use serenity::all::{CreateEmbed, CreateMessage};
 use url::Url;
+
+use serenity::all::{CreateEmbed, CreateMessage};
 
 use super::rss::{EMBED_TITLE_LIMIT, FEED_USER_AGENT, truncate_description, truncate_text};
 
@@ -72,7 +74,7 @@ pub async fn fetch_messages(topic_url: &str, since: &str) -> Result<Vec<NtfyMess
     Ok(messages)
 }
 
-pub fn build_message(message: &NtfyMessage, topic: &str) -> CreateMessage {
+pub fn build_message<'a>(message: &'a NtfyMessage, topic: &str) -> CreateMessage<'a> {
     let title = message
         .title
         .clone()

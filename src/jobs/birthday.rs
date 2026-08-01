@@ -1,8 +1,10 @@
-use crate::{channels, jobs::JobContext, models::birthdays};
 use anyhow::Result;
 use chrono::Datelike;
 use chrono_tz::US::Central;
+use poise::serenity_prelude as serenity;
 use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
+
+use crate::{constants, jobs::JobContext, models::birthdays};
 use serenity::all::{CreateMessage, MessageBuilder, UserId};
 
 pub async fn send_birthday_message(ctx: JobContext) -> Result<()> {
@@ -31,7 +33,7 @@ pub async fn send_birthday_message(ctx: JobContext) -> Result<()> {
             .mention(&user_id)
             .build();
 
-        channels::CONFIDENTIAL
+        constants::channels::CONFIDENTIAL
             .send_message(&ctx.discord_http, CreateMessage::new().content(content))
             .await?;
     }

@@ -1,11 +1,9 @@
 use anyhow::Result;
+use poise::serenity_prelude as serenity;
 use sea_orm::{EntityTrait, Set};
-use serenity::all::User;
 
-use crate::{
-    models::birthdays,
-    Context as PoiseContext,
-};
+use crate::{Context as PoiseContext, models::birthdays};
+use serenity::all::User;
 
 #[poise::command(slash_command)]
 pub async fn register(
@@ -33,8 +31,10 @@ pub async fn register(
     .exec(&ctx.data().db)
     .await?;
 
-    ctx.say(format!("Registered birthday for <@{user_id}> as {month}/{day}"))
-        .await?;
+    ctx.say(format!(
+        "Registered birthday for <@{user_id}> as {month}/{day}"
+    ))
+    .await?;
 
     Ok(())
 }

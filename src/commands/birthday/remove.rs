@@ -1,11 +1,9 @@
 use anyhow::Result;
+use poise::serenity_prelude as serenity;
 use sea_orm::{EntityTrait, ModelTrait};
-use serenity::all::User;
 
-use crate::{
-    models::birthdays,
-    Context as PoiseContext,
-};
+use crate::{Context as PoiseContext, models::birthdays};
+use serenity::all::User;
 
 #[poise::command(slash_command)]
 pub async fn remove(
@@ -25,10 +23,8 @@ pub async fn remove(
                 .await?;
         }
         None => {
-            ctx.say(format!(
-                "No birthday registered for <@{user_id}>"
-            ))
-            .await?;
+            ctx.say(format!("No birthday registered for <@{user_id}>"))
+                .await?;
         }
     }
 

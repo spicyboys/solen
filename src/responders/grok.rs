@@ -1,10 +1,12 @@
 use crate::responders::Responder;
 use anyhow::Result;
 use async_trait::async_trait;
+use poise::serenity_prelude as serenity;
 use rand::random_bool;
 use regex::{Regex, RegexBuilder};
-use serenity::all::{Context, CreateMessage, Message};
 use std::sync::LazyLock;
+
+use serenity::all::{Context, CreateMessage, Message};
 
 pub struct GrokResponder;
 

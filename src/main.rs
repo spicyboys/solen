@@ -1,109 +1,104 @@
-mod channels;
 mod commands;
-mod emojis;
+mod constants;
+mod events;
 mod jobs;
 mod models;
 mod responders;
+mod s3;
+mod settings;
 mod soundboard_manager;
 
-use dotenv::dotenv;
+use std::sync::Arc;
+
+use dotenvy::dotenv;
 use migration::{Migrator, MigratorTrait};
 use poise::serenity_prelude as serenity;
 use sea_orm::Database;
 use serenity::{
-    all::{CreateMessage, GuildChannel, Message, MessageBuilder},
+    all::{ClientBuilder, FullEvent},
     async_trait,
-    model::voice::VoiceState,
     prelude::*,
 };
-use std::env;
 use tokio_cron_scheduler::JobScheduler;
 
-use crate::soundboard_manager::voice_state_update;
+use crate::{s3::S3Client, soundboard_manager::voice_state_update};
 
 pub struct Data {
     pub db: sea_orm::DatabaseConnection,
+    pub s3: s3::S3Client,
 }
 
 type Error = Box<dyn std::error::Error + Send + Sync>;
 type Context<'a> = poise::Context<'a, Data, Error>;
 
-struct Handler;
+struct Handler {
+    data: Arc<Data>,
+}
 
 #[async_trait]
 impl EventHandler for Handler {
-    async fn thread_create(&self, ctx: serenity::prelude::Context, thread: GuildChannel) {
-        if thread.parent_id != Some(channels::SPICY_GAMES) {
-            return;
-        }
-
-        let Some(owner_id) = thread.owner_id else {
-            return;
-        };
-
-        let message_content = MessageBuilder::new()
-            .mention(&owner_id)
-            .push(" has created a new thread in ")
-            .channel(channels::SPICY_GAMES)
-            .push(": ")
-            .channel(thread.id)
-            .build();
-        let message = CreateMessage::new().content(message_content);
-        let _ = channels::GAMES_CHAT.send_message(ctx.http, message).await;
-    }
-
-    async fn message(&self, ctx: serenity::prelude::Context, message: Message) {
-        for responder in responders::RESPONDERS.iter() {
-            if let Err(e) = responder.respond(&ctx, &message).await {
-                eprintln!("Responder error: {:?}", e);
+    async fn dispatch(&self, ctx: &serenity::Context, event: &FullEvent) {
+        match event {
+            FullEvent::Message { new_message, .. } => {
+                for responder in responders::RESPONDERS.iter() {
+                    if let Err(e) = responder.respond(ctx, new_message).await {
+                        eprintln!("Responder error: {:?}", e);
+                    }
+                }
             }
+            FullEvent::ThreadCreate { thread, .. } => {
+                events::thread_create::handle_thread_create(ctx, thread).await;
+            }
+            FullEvent::VoiceStateUpdate { old, new, .. } => {
+                voice_state_update(ctx, old.as_ref(), new).await;
+            }
+            FullEvent::InteractionCreate {
+                interaction: serenity::all::Interaction::Component(comp),
+                ..
+            } => {
+                events::interaction_create::handle_interaction_create(ctx, &self.data, comp).await;
+            }
+            _ => {}
         }
-    }
-
-    async fn voice_state_update(
-        &self,
-        ctx: serenity::prelude::Context,
-        old: Option<VoiceState>,
-        new: VoiceState,
-    ) {
-        voice_state_update(ctx, old, new).await;
     }
 }
 
 #[tokio::main]
 async fn main() {
     dotenv().ok();
+    let settings = settings::Settings::load().expect("Failed to load settings");
 
-    let db_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set");
+    rustls::crypto::aws_lc_rs::default_provider()
+        .install_default()
+        .expect("Failed to install AWS-LC crypto provider");
 
-    let conn = Database::connect(db_url).await.unwrap();
+    let conn = Database::connect(settings.database_url).await.unwrap();
     Migrator::up(&conn, None).await.unwrap();
 
-    // Login with a bot token from the environment
-    let token = env::var("DISCORD_TOKEN").expect("Expected a token in the environment");
+    let token = Token::try_from(settings.discord_token.clone()).expect("Invalid bot token");
     let intents = GatewayIntents::GUILD_MESSAGES
         | GatewayIntents::MESSAGE_CONTENT
         | GatewayIntents::GUILDS
         | GatewayIntents::GUILD_VOICE_STATES;
 
-    let conn_for_framework = conn.clone();
-    let framework = poise::Framework::builder()
-        .options(poise::FrameworkOptions {
-            commands: vec![commands::feed(), commands::birthday()],
-            ..Default::default()
-        })
-        .setup(move |ctx, _ready, framework| {
-            let db = conn_for_framework.clone();
-            Box::pin(async move {
-                poise::builtins::register_globally(ctx, &framework.options().commands).await?;
-                Ok(Data { db })
-            })
-        })
-        .build();
+    let framework = poise::Framework::new(poise::FrameworkOptions {
+        commands: vec![
+            commands::feed(),
+            commands::birthday(),
+            commands::soundboard(),
+        ],
+        ..Default::default()
+    });
 
-    let mut client = Client::builder(&token, intents)
-        .event_handler(Handler)
-        .framework(framework)
+    let data = Arc::new(Data {
+        db: conn.clone(),
+        s3: S3Client::new(settings.s3).await,
+    });
+
+    let mut client = ClientBuilder::new(token, intents)
+        .data(data.clone())
+        .event_handler(Arc::new(Handler { data }))
+        .framework(Box::new(framework))
         .await
         .expect("Err creating client");
 

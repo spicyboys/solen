@@ -1,8 +1,9 @@
-use std::collections::HashMap;
-
 use anyhow::{Context, Result};
 use bytes::Bytes;
 use html2md::TagHandlerFactory;
+use poise::serenity_prelude as serenity;
+use std::collections::HashMap;
+
 use serenity::all::{CreateEmbed, CreateMessage};
 
 pub(super) const EMBED_TITLE_LIMIT: usize = 256;
@@ -29,7 +30,7 @@ pub fn parse_rss_feed_bytes(bytes: &[u8]) -> Result<rss::Channel> {
     rss::Channel::read_from(bytes).context("invalid RSS feed")
 }
 
-pub fn build_message(item: &rss::Item) -> Result<CreateMessage> {
+pub fn build_message<'a>(item: &'a rss::Item) -> Result<CreateMessage<'a>> {
     let mut embed = CreateEmbed::new();
 
     if let Some(title) = item.title() {

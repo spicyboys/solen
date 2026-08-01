@@ -3,6 +3,8 @@ mod slurp_enforcement;
 
 use anyhow::Result;
 use async_trait::async_trait;
+use poise::serenity_prelude as serenity;
+
 use serenity::all::{Context, Message};
 
 #[async_trait]

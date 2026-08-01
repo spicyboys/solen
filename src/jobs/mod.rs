@@ -2,6 +2,7 @@ mod birthday;
 pub mod feeds;
 
 use chrono_tz::US::Central;
+use poise::serenity_prelude as serenity;
 use std::{sync::Arc, time::Duration};
 use tokio_cron_scheduler::{Job, JobScheduler, JobSchedulerError};
 

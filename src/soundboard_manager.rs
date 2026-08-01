@@ -1,9 +1,11 @@
+use poise::serenity_prelude as serenity;
+
 use serenity::{
     all::GuildChannel,
     model::{
         Permissions,
         channel::{Channel, ChannelType, PermissionOverwrite, PermissionOverwriteType},
-        id::ChannelId,
+        id::{ChannelId, GenericChannelId, GuildId},
         voice::VoiceState,
     },
     prelude::*,
@@ -11,23 +13,30 @@ use serenity::{
 
 const CHANNEL_MEMBER_THRESHOLD: usize = 8;
 
-pub async fn voice_state_update(ctx: Context, old: Option<VoiceState>, new: VoiceState) {
+pub async fn voice_state_update(ctx: &Context, old: Option<&VoiceState>, new: &VoiceState) {
     // Handle user connecting to a new channel
-    if let Some(channel) = get_voice_channel(&ctx, new.channel_id).await {
-        handle_connection(&ctx, channel).await;
+    if let Some(channel) = get_voice_channel(ctx, new.channel_id, new.guild_id).await {
+        handle_connection(ctx, channel).await;
     }
 
     // Handle user disconnecting from a channel
-    if let Some(channel) = get_voice_channel(&ctx, old.and_then(|o| o.channel_id)).await {
-        handle_disconnection(&ctx, channel).await;
+    if let Some(old_state) = old
+        && let Some(channel) =
+            get_voice_channel(ctx, old_state.channel_id, old_state.guild_id).await
+    {
+        handle_disconnection(ctx, channel).await;
     }
 }
 
-async fn get_voice_channel(ctx: &Context, channel_id: Option<ChannelId>) -> Option<GuildChannel> {
-    if let Some(channel_id) = channel_id
-        && channel_id != crate::channels::POBLANO
-        && let Ok(Channel::Guild(channel)) = channel_id.to_channel(ctx.http()).await
-        && channel.kind == ChannelType::Voice
+async fn get_voice_channel(
+    ctx: &Context,
+    channel_id: Option<ChannelId>,
+    guild_id: Option<GuildId>,
+) -> Option<GuildChannel> {
+    if let Some(channel_id) = channel_id.map(GenericChannelId::from)
+        && channel_id != crate::constants::channels::POBLANO
+        && let Ok(Channel::Guild(channel)) = channel_id.to_channel(ctx, guild_id).await
+        && channel.base.kind == ChannelType::Voice
     {
         Some(channel)
     } else {
@@ -50,7 +59,11 @@ async fn handle_connection(ctx: &Context, channel: GuildChannel) {
             // Add soundboard to deny if not already there
             if !overwrite.deny.contains(Permissions::USE_SOUNDBOARD) {
                 overwrite.deny |= Permissions::USE_SOUNDBOARD;
-                if let Err(e) = channel.create_permission(&ctx.http(), overwrite).await {
+                if let Err(e) = channel
+                    .id
+                    .create_permission(&ctx.http, overwrite, None)
+                    .await
+                {
                     eprintln!("Failed to update soundboard permission override: {:?}", e);
                 }
             }
@@ -60,10 +73,11 @@ async fn handle_connection(ctx: &Context, channel: GuildChannel) {
             let everyone_overwrite = PermissionOverwrite {
                 allow: Permissions::empty(),
                 deny: Permissions::USE_SOUNDBOARD,
-                kind: PermissionOverwriteType::Role(channel.guild_id.everyone_role()),
+                kind: PermissionOverwriteType::Role(channel.base.guild_id.everyone_role()),
             };
             if let Err(e) = channel
-                .create_permission(&ctx.http(), everyone_overwrite)
+                .id
+                .create_permission(&ctx.http, everyone_overwrite, None)
                 .await
             {
                 eprintln!("Failed to create soundboard permission override: {:?}", e);
@@ -90,9 +104,11 @@ async fn handle_disconnection(ctx: &Context, channel: GuildChannel) {
         // If both allow and deny are now empty, delete the overwrite
         if overwrite.allow.is_empty() && overwrite.deny.is_empty() {
             if let Err(e) = channel
+                .id
                 .delete_permission(
-                    &ctx.http(),
-                    PermissionOverwriteType::Role(channel.guild_id.everyone_role()),
+                    &ctx.http,
+                    PermissionOverwriteType::Role(channel.base.guild_id.everyone_role()),
+                    None,
                 )
                 .await
             {
@@ -100,7 +116,11 @@ async fn handle_disconnection(ctx: &Context, channel: GuildChannel) {
             }
         } else {
             // Update the overwrite with soundboard removed
-            if let Err(e) = channel.create_permission(&ctx.http(), overwrite).await {
+            if let Err(e) = channel
+                .id
+                .create_permission(&ctx.http, overwrite, None)
+                .await
+            {
                 eprintln!("Failed to update soundboard permission override: {:?}", e);
             }
         }
@@ -112,7 +132,7 @@ fn find_existing_overwrite(channel: &GuildChannel) -> Option<PermissionOverwrite
         .permission_overwrites
         .iter()
         .find(|overwrite| {
-            overwrite.kind == PermissionOverwriteType::Role(channel.guild_id.everyone_role())
+            overwrite.kind == PermissionOverwriteType::Role(channel.base.guild_id.everyone_role())
         })
         .cloned()
 }

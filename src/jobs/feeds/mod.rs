@@ -3,15 +3,16 @@ pub mod rss;
 
 use anyhow::{Result, bail};
 use chrono::DateTime;
+use poise::serenity_prelude as serenity;
 use sea_orm::{ActiveModelTrait, EntityTrait, Set};
+use url::Url;
+
+use crate::{jobs::JobContext, models::feeds};
 use serenity::{
-    all::{ChannelId, prelude::Mentionable},
+    all::{GenericChannelId, prelude::Mentionable},
     builder::CreateEmbed,
     model::id::UserId,
 };
-
-use crate::{jobs::JobContext, models::feeds};
-use url::Url;
 
 pub async fn sync_feed_jobs(ctx: JobContext) -> Result<()> {
     let jobs = feeds::Entity::find().all(&ctx.db).await?;
@@ -58,7 +59,7 @@ async fn sync_ntfy_job(ctx: &JobContext, job: &feeds::Model) -> Result<()> {
 
     let tag_embed = create_tag_embed(job);
     let topic = job.feed.rsplit('/').next().unwrap_or_default().to_string();
-    let channel_id = ChannelId::new(job.channel_id as u64);
+    let channel_id = GenericChannelId::new(job.channel_id as u64);
     for message in to_post {
         let mut message = ntfy::build_message(message, &topic);
         if let Some(ref tag_embed) = tag_embed {
@@ -112,7 +113,7 @@ async fn sync_rss_job(ctx: &JobContext, job: &feeds::Model) -> Result<()> {
     };
 
     let tag_embed = create_tag_embed(job);
-    let channel_id = ChannelId::new(job.channel_id as u64);
+    let channel_id = GenericChannelId::new(job.channel_id as u64);
     for item in posts.iter().rev() {
         let mut message = rss::build_message(item)?;
         if let Some(ref tag_embed) = tag_embed {
@@ -137,7 +138,7 @@ fn item_identifier(item: &::rss::Item) -> String {
         .unwrap_or_default()
 }
 
-fn create_tag_embed(job: &feeds::Model) -> Option<CreateEmbed> {
+fn create_tag_embed(job: &feeds::Model) -> Option<CreateEmbed<'static>> {
     if job.notify.is_empty() {
         None
     } else {

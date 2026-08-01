@@ -15,16 +15,22 @@ pub async fn feed(_: PoiseContext<'_>) -> Result<(), Box<dyn std::error::Error +
     Ok(())
 }
 
-async fn channel_feed_list_autocomplete(
-    ctx: PoiseContext<'_>,
-    _: &str,
-) -> impl Iterator<Item = String> {
+async fn channel_feed_list_autocomplete<'a>(
+    ctx: PoiseContext<'a>,
+    _: &'a str,
+) -> poise::serenity_prelude::CreateAutocompleteResponse<'a> {
     let channel_id = ctx.channel_id().get() as i64;
-    feeds::Entity::find()
+    let feeds = feeds::Entity::find()
         .filter(feeds::Column::ChannelId.eq(channel_id))
         .all(&ctx.data().db)
         .await
-        .unwrap_or_else(|_| Vec::new())
-        .into_iter()
-        .map(|subscription| subscription.feed)
+        .unwrap_or_else(|_| Vec::new());
+    poise::serenity_prelude::CreateAutocompleteResponse::new().set_choices(
+        feeds
+            .into_iter()
+            .map(|subscription| {
+                poise::serenity_prelude::AutocompleteChoice::from(subscription.feed)
+            })
+            .collect::<Vec<_>>(),
+    )
 }
