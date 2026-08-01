@@ -3,10 +3,8 @@ mod constants;
 mod events;
 mod jobs;
 mod models;
-mod responders;
 mod s3;
 mod settings;
-mod soundboard_manager;
 
 use std::sync::Arc;
 
@@ -14,14 +12,10 @@ use dotenvy::dotenv;
 use migration::{Migrator, MigratorTrait};
 use poise::serenity_prelude as serenity;
 use sea_orm::Database;
-use serenity::{
-    all::{ClientBuilder, FullEvent},
-    async_trait,
-    prelude::*,
-};
+use serenity::{all::ClientBuilder, prelude::*};
 use tokio_cron_scheduler::JobScheduler;
 
-use crate::{s3::S3Client, soundboard_manager::voice_state_update};
+use crate::s3::S3Client;
 
 pub struct Data {
     pub db: sea_orm::DatabaseConnection,
@@ -30,38 +24,6 @@ pub struct Data {
 
 type Error = Box<dyn std::error::Error + Send + Sync>;
 type Context<'a> = poise::Context<'a, Data, Error>;
-
-struct Handler {
-    data: Arc<Data>,
-}
-
-#[async_trait]
-impl EventHandler for Handler {
-    async fn dispatch(&self, ctx: &serenity::Context, event: &FullEvent) {
-        match event {
-            FullEvent::Message { new_message, .. } => {
-                for responder in responders::RESPONDERS.iter() {
-                    if let Err(e) = responder.respond(ctx, new_message).await {
-                        eprintln!("Responder error: {:?}", e);
-                    }
-                }
-            }
-            FullEvent::ThreadCreate { thread, .. } => {
-                events::thread_create::handle_thread_create(ctx, thread).await;
-            }
-            FullEvent::VoiceStateUpdate { old, new, .. } => {
-                voice_state_update(ctx, old.as_ref(), new).await;
-            }
-            FullEvent::InteractionCreate {
-                interaction: serenity::all::Interaction::Component(comp),
-                ..
-            } => {
-                events::interaction_create::handle_interaction_create(ctx, &self.data, comp).await;
-            }
-            _ => {}
-        }
-    }
-}
 
 #[tokio::main]
 async fn main() {
@@ -97,7 +59,7 @@ async fn main() {
 
     let mut client = ClientBuilder::new(token, intents)
         .data(data.clone())
-        .event_handler(Arc::new(Handler { data }))
+        .event_handler(Arc::new(events::Handler::new(data)))
         .framework(Box::new(framework))
         .await
         .expect("Err creating client");

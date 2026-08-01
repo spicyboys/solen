@@ -3,7 +3,8 @@ use anyhow::Result;
 use poise::serenity_prelude as serenity;
 use url::Url;
 
-use crate::{constants, responders::Responder};
+use super::Responder;
+use crate::constants;
 use serenity::{
     all::{Context, Message},
     async_trait,
