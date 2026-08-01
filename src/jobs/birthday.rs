@@ -2,7 +2,6 @@ use anyhow::Result;
 use chrono::Datelike;
 use chrono_tz::US::Central;
 use poise::serenity_prelude as serenity;
-use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
 
 use crate::{constants, jobs::JobContext, models::birthdays};
 use serenity::all::{CreateMessage, MessageBuilder, UserId};
@@ -15,10 +14,11 @@ pub async fn send_birthday_message(ctx: JobContext) -> Result<()> {
         today.day()
     );
 
-    let birthdays = birthdays::Entity::find()
-        .filter(birthdays::Column::Day.eq(today.day() as i16))
-        .filter(birthdays::Column::Month.eq(today.month() as i16))
-        .all(&ctx.db)
+    let mut db = ctx.db.clone();
+    let birthdays = birthdays::Model::all()
+        .filter(birthdays::Model::fields().day().eq(today.day() as i16))
+        .filter(birthdays::Model::fields().month().eq(today.month() as i16))
+        .exec(&mut db)
         .await?;
 
     if birthdays.is_empty() {

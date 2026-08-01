@@ -1,21 +1,22 @@
 use crate::Context as PoiseContext;
 use crate::models::archived_soundboards;
 use poise::serenity_prelude as serenity;
-use sea_orm::entity::prelude::*;
 
 use serenity::all::{CreateAttachment, CreateSoundboard, GuildId};
 
 pub async fn perform_restore(
-    db: &sea_orm::DatabaseConnection,
+    db: &toasty::Db,
     s3: &crate::s3::S3Client,
     http: &serenity::http::Http,
     guild_id: GuildId,
     sound_id: &str,
 ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
-    let record = archived_soundboards::Entity::find_by_id(sound_id)
-        .one(db)
+    let mut db = db.clone();
+    let record = archived_soundboards::Model::filter_by_sound_id(sound_id.to_string())
+        .first()
+        .exec(&mut db)
         .await?;
-    let record = match record {
+    let mut record = match record {
         Some(r) => r,
         None => return Ok("Archived soundboard not found".to_string()),
     };
@@ -43,16 +44,13 @@ pub async fn perform_restore(
         .create_guild_soundboard(guild_id, &CreateSoundboard::new(&record.name, sound), None)
         .await?;
 
-    archived_soundboards::Entity::update_many()
-        .col_expr(
-            archived_soundboards::Column::SoundId,
-            Expr::value(created.id.to_string()),
-        )
-        .filter(archived_soundboards::Column::SoundId.eq(record.sound_id))
-        .exec(db)
+    record
+        .update()
+        .sound_id(created.id.to_string())
+        .exec(&mut db)
         .await?;
 
-    Ok(format!("Restored archived soundboard as {}", created.id))
+    Ok(format!("Restored archived soundboard as {}", record.name))
 }
 
 fn detect_audio_mime(bytes: &[u8]) -> &'static str {

@@ -3,7 +3,6 @@ use poise::serenity_prelude::all::{
     CreateContainerComponent, CreateSection, CreateSectionAccessory, CreateSectionComponent,
     CreateTextDisplay, GuildId, Http, MessageFlags,
 };
-use sea_orm::{DatabaseConnection, EntityTrait};
 
 use crate::{
     Context as PoiseContext,
@@ -40,12 +39,13 @@ pub async fn list(ctx: PoiseContext<'_>) -> Result<(), Box<dyn std::error::Error
 }
 
 pub async fn build_list_components(
-    db: &DatabaseConnection,
+    db: &toasty::Db,
     http: &Http,
     guild_id: GuildId,
     page: usize,
 ) -> Result<Option<Vec<CreateComponent<'static>>>, Box<dyn std::error::Error + Send + Sync>> {
-    let records = archived_soundboards::Entity::find().all(db).await?;
+    let mut db = db.clone();
+    let records = archived_soundboards::Model::all().exec(&mut db).await?;
     if records.is_empty() {
         return Ok(None);
     }

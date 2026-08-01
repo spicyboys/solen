@@ -1,9 +1,5 @@
 use crate::Context as PoiseContext;
 use crate::models::archived_soundboards;
-use sea_orm::EntityTrait;
-use sea_orm::QuerySelect;
-use sea_orm::Set;
-use sea_orm::entity::prelude::*;
 
 #[poise::command(slash_command)]
 pub async fn archive(
@@ -23,9 +19,9 @@ pub async fn archive(
     let sbs = ctx.http().get_guild_soundboards(guild_id).await?;
 
     // Skip if already archived
-    let archived_soundboard_ids = archived_soundboards::Entity::find()
-        .column(archived_soundboards::Column::SoundId)
-        .all(&ctx.data().db)
+    let mut db = ctx.data().db.clone();
+    let archived_soundboard_ids = archived_soundboards::Model::all()
+        .exec(&mut db)
         .await?
         .into_iter()
         .map(|a| a.sound_id)
@@ -40,7 +36,7 @@ pub async fn archive(
         }
 
         archive_soundboard(
-            &ctx.data().db,
+            &mut db,
             &ctx.data().s3,
             &sound_id,
             &sb.name,
@@ -57,7 +53,7 @@ pub async fn archive(
 }
 
 pub async fn archive_soundboard(
-    db: &sea_orm::DatabaseConnection,
+    db: &mut toasty::Db,
     s3: &crate::s3::S3Client,
     sound_id: &str,
     name: &str,
@@ -75,13 +71,14 @@ pub async fn archive_soundboard(
 
     s3.upload_bytes(&key, soundboard_data).await?;
 
-    let am = archived_soundboards::ActiveModel {
-        sound_id: Set(sound_id.to_string()),
-        name: Set(name.to_string()),
-        s3_key: Set(key),
-        original_uploader: Set(original_uploader),
-    };
-
-    am.insert(db).await?;
+    // let mut connection = db.connection().await?;
+    toasty::create!(archived_soundboards::Model {
+        sound_id: sound_id.to_string(),
+        name: name.to_string(),
+        s3_key: key,
+        original_uploader,
+    })
+    .exec(db)
+    .await?;
     Ok(())
 }

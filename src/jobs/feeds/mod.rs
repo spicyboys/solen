@@ -4,14 +4,14 @@ pub mod rss;
 use anyhow::{Result, bail};
 use chrono::DateTime;
 use poise::serenity_prelude as serenity;
-use sea_orm::{ActiveModelTrait, EntityTrait, Set};
 use url::Url;
 
 use crate::{jobs::JobContext, models::feeds};
 use serenity::all::GenericChannelId;
 
 pub async fn sync_feed_jobs(ctx: JobContext) -> Result<()> {
-    let jobs = feeds::Entity::find().all(&ctx.db).await?;
+    let mut db = ctx.db.clone();
+    let jobs = feeds::Model::all().exec(&mut db).await?;
 
     for job in jobs {
         let parsed_feed_url = match Url::parse(&job.feed) {
@@ -63,9 +63,10 @@ async fn sync_ntfy_job(ctx: &JobContext, job: &feeds::Model) -> Result<()> {
 
     if let Some(latest) = messages.last() {
         let latest_id = latest.id.clone();
-        let mut model: feeds::ActiveModel = job.clone().into();
-        model.latest_post = Set(latest_id);
-        model.update(&ctx.db).await?;
+        let mut model = job.clone();
+        model.latest_post = latest_id.clone();
+        let mut db = ctx.db.clone();
+        model.update().latest_post(latest_id).exec(&mut db).await?;
     }
 
     Ok(())
@@ -113,9 +114,10 @@ async fn sync_rss_job(ctx: &JobContext, job: &feeds::Model) -> Result<()> {
     }
 
     if let Some(latest_post_id) = items.first().map(|item| item_identifier(item)) {
-        let mut model: feeds::ActiveModel = job.clone().into();
-        model.latest_post = Set(latest_post_id);
-        model.update(&ctx.db).await?;
+        let mut model = job.clone();
+        model.latest_post = latest_post_id.clone();
+        let mut db = ctx.db.clone();
+        model.update().latest_post(latest_post_id).exec(&mut db).await?;
     }
 
     Ok(())

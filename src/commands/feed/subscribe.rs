@@ -1,5 +1,4 @@
 use anyhow::{Context, Result};
-use sea_orm::{EntityTrait, Set};
 use url::Url;
 
 use crate::{
@@ -23,17 +22,15 @@ pub async fn subscribe(
     };
 
     let channel_id = ctx.channel_id().get().to_string();
-    let subscription = feeds::ActiveModel {
-        channel_id: Set(channel_id.parse::<i64>().unwrap_or_default()),
-        feed: Set(normalized_url.clone()),
-        latest_post: Set(String::new()),
-        ..Default::default()
-    };
-
-    feeds::Entity::insert(subscription)
-        .exec(&ctx.data().db)
-        .await
-        .context("failed to save subscription")?;
+    let mut db = ctx.data().db.clone();
+    toasty::create!(feeds::Model {
+        channel_id: channel_id.parse::<i64>().unwrap_or_default(),
+        feed: normalized_url.clone(),
+        latest_post: String::new(),
+    })
+    .exec(&mut db)
+    .await
+    .context("failed to save subscription")?;
 
     ctx.say(format!("Subscribed this channel to: {normalized_url}"))
         .await?;

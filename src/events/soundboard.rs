@@ -1,8 +1,5 @@
 use poise::serenity_prelude::Soundboard;
 use poise::serenity_prelude::all::{SoundboardSoundCreateEvent, SoundboardSoundUpdateEvent};
-use sea_orm::ActiveValue::Set;
-use sea_orm::IntoActiveModel;
-use sea_orm::entity::prelude::*;
 
 use crate::Data;
 use crate::commands::archive_soundboard;
@@ -15,22 +12,27 @@ pub async fn handle_soundboard_sound_create(data: &Data, event: &SoundboardSound
 pub async fn handle_soundboard_sound_update(data: &Data, event: &SoundboardSoundUpdateEvent) {
     let sound_id = event.soundboard.id.to_string();
 
-    let entity = archived_soundboards::Entity::find_by_id(sound_id)
-        .one(&data.db)
+    let mut db = data.db.clone();
+    let entity = archived_soundboards::Model::filter_by_sound_id(sound_id)
+        .first()
+        .exec(&mut db)
         .await
         .ok()
         .flatten();
 
-    if let Some(entity) = entity {
-        if entity.name != event.soundboard.name {
-            let mut am = entity.into_active_model();
-            am.name = Set(event.soundboard.name.clone());
-            if let Err(e) = am.update(&data.db).await {
-                eprintln!(
-                    "Failed to update archived soundboard {}: {:?}",
-                    event.soundboard.id, e
-                );
-            }
+    if let Some(mut entity) = entity
+        && entity.name != event.soundboard.name
+    {
+        if let Err(e) = entity
+            .update()
+            .name(event.soundboard.name.clone())
+            .exec(&mut db)
+            .await
+        {
+            eprintln!(
+                "Failed to update archived soundboard {}: {:?}",
+                event.soundboard.id, e
+            );
         }
     } else {
         handle_unarchived_soundboard(data, &event.soundboard).await;
@@ -39,7 +41,7 @@ pub async fn handle_soundboard_sound_update(data: &Data, event: &SoundboardSound
 
 async fn handle_unarchived_soundboard(data: &Data, soundboard: &Soundboard) {
     if let Err(e) = archive_soundboard(
-        &data.db,
+        &mut data.db.clone(),
         &data.s3,
         &soundboard.id.to_string(),
         &soundboard.name,

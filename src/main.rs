@@ -9,16 +9,15 @@ mod settings;
 use std::sync::Arc;
 
 use dotenvy::dotenv;
-use migration::{Migrator, MigratorTrait};
 use poise::serenity_prelude as serenity;
-use sea_orm::Database;
 use serenity::{all::ClientBuilder, prelude::*};
+use toasty::{Db, db::Connect};
 use tokio_cron_scheduler::JobScheduler;
 
 use crate::s3::S3Client;
 
 pub struct Data {
-    pub db: sea_orm::DatabaseConnection,
+    pub db: Db,
     pub s3: s3::S3Client,
 }
 
@@ -34,8 +33,15 @@ async fn main() {
         .install_default()
         .expect("Failed to install AWS-LC crypto provider");
 
-    let conn = Database::connect(settings.database_url).await.unwrap();
-    Migrator::up(&conn, None).await.unwrap();
+    let db = Db::builder()
+        .models(toasty::models!(
+            models::birthdays::Model,
+            models::feeds::Model,
+            models::archived_soundboards::Model,
+        ))
+        .build(Connect::new(&settings.database_url).await.unwrap())
+        .await
+        .unwrap();
 
     let token = Token::try_from(settings.discord_token.clone()).expect("Invalid bot token");
     let intents = GatewayIntents::GUILD_MESSAGES
@@ -53,7 +59,7 @@ async fn main() {
     });
 
     let data = Arc::new(Data {
-        db: conn.clone(),
+        db: db.clone(),
         s3: S3Client::new(settings.s3).await,
     });
 
@@ -69,7 +75,7 @@ async fn main() {
         &sched,
         jobs::JobContext {
             discord_http: client.http.clone(),
-            db: conn,
+            db,
         },
     )
     .await

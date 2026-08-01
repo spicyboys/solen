@@ -1,6 +1,5 @@
 use anyhow::Result;
 use poise::serenity_prelude as serenity;
-use sea_orm::{EntityTrait, Set};
 
 use crate::{Context as PoiseContext, models::birthdays};
 use serenity::all::User;
@@ -22,13 +21,14 @@ pub async fn register(
     }
 
     let user_id = user.id.to_string();
+    let mut db = ctx.data().db.clone();
 
-    birthdays::Entity::insert(birthdays::ActiveModel {
-        user_id: Set(user_id.clone()),
-        month: Set(month),
-        day: Set(day),
+    toasty::create!(birthdays::Model {
+        user_id: user_id.clone(),
+        month,
+        day,
     })
-    .exec(&ctx.data().db)
+    .exec(&mut db)
     .await?;
 
     ctx.say(format!(

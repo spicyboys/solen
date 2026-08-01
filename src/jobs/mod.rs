@@ -9,7 +9,7 @@ use tokio_cron_scheduler::{Job, JobScheduler, JobSchedulerError};
 #[derive(Clone)]
 pub struct JobContext {
     pub discord_http: Arc<serenity::http::Http>,
-    pub db: sea_orm::DatabaseConnection,
+    pub db: toasty::Db,
 }
 
 const FEED_POLL_INTERVAL: Duration = Duration::from_secs(60 * 10);
