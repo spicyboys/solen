@@ -3,6 +3,7 @@ mod list;
 mod restore;
 
 use archive::archive;
+pub use archive::archive_soundboard;
 pub use list::build_list_components;
 use list::list;
 pub use restore::perform_restore;

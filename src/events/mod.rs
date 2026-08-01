@@ -1,5 +1,6 @@
 mod interaction_create;
 mod message;
+mod soundboard;
 mod thread_create;
 mod voice_state_update;
 
@@ -32,6 +33,12 @@ impl EventHandler for Handler {
             }
             FullEvent::VoiceStateUpdate { old, new, .. } => {
                 voice_state_update::handle_voice_state_update(ctx, old.as_ref(), new).await;
+            }
+            FullEvent::SoundboardSoundCreate { event, .. } => {
+                soundboard::handle_soundboard_sound_create(&self.data, event).await;
+            }
+            FullEvent::SoundboardSoundUpdate { event, .. } => {
+                soundboard::handle_soundboard_sound_update(&self.data, event).await;
             }
             FullEvent::InteractionCreate {
                 interaction: serenity::all::Interaction::Component(comp),
