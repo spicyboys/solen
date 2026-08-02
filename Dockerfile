@@ -1,9 +1,9 @@
 FROM rust:1.95-trixie AS builder
 WORKDIR /usr/src/solen
-RUN cargo install topcoat-cli --version 0.5.0 
 COPY . .
-RUN topcoat asset bundle --release
 RUN cargo build --release
+RUN cargo install topcoat-cli --version 0.5.0 --locked \
+    && topcoat asset bundle --release
 
 FROM debian:trixie-slim
 RUN apt-get update && apt-get install -y ca-certificates
