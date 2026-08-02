@@ -8,7 +8,6 @@ use topcoat::{
     },
     view::{attributes, component, view},
 };
-use tracing::{error, info};
 
 use crate::{
     components::button::{ButtonSize, button},
