@@ -56,10 +56,68 @@ impl FlagValue {
             "string" => Ok(FlagValue::String {
                 value: value.to_owned(),
             }),
-            "object" => serde_json::from_str::<BTreeMap<String, FlagValue>>(value)
-                .map(|value| FlagValue::Object { value })
-                .map_err(|error| format!("invalid object JSON: {error}")),
+            "object" => serde_json::from_str::<serde_json::Value>(value)
+                .map_err(|error| format!("invalid object JSON: {error}"))
+                .and_then(|json| {
+                    let object = json
+                        .as_object()
+                        .ok_or_else(|| "expected a JSON object".to_owned())?;
+                    object
+                        .iter()
+                        .map(|(key, value)| {
+                            FlagValue::from_json_value(value)
+                                .map(|value| (key.clone(), value))
+                        })
+                        .collect::<Result<BTreeMap<_, _>, _>>()
+                })
+                .map(|value| FlagValue::Object { value }),
             other => Err(format!("unknown flag kind: {other:?}")),
+        }
+    }
+
+    /// Infer a [`FlagValue`] from a raw JSON value, choosing the variant by the
+    /// JSON type: booleans, strings, numbers (integers as `Int`, everything
+    /// else as `Float`) and objects (recursively). `null` and arrays are
+    /// rejected since they have no `FlagValue` equivalent.
+    fn from_json_value(value: &serde_json::Value) -> Result<Self, String> {
+        match value {
+            serde_json::Value::Bool(value) => Ok(FlagValue::Bool { value: *value }),
+            serde_json::Value::String(value) => Ok(FlagValue::String { value: value.clone() }),
+            serde_json::Value::Number(value) => {
+                if let Some(value) = value.as_i64() {
+                    Ok(FlagValue::Int { value })
+                } else if let Some(value) = value.as_f64() {
+                    Ok(FlagValue::Float { value })
+                } else {
+                    Err(format!("number out of range: {value}"))
+                }
+            }
+            serde_json::Value::Object(value) => value
+                .iter()
+                .map(|(key, value)| {
+                    FlagValue::from_json_value(value).map(|value| (key.clone(), value))
+                })
+                .collect::<Result<BTreeMap<_, _>, _>>()
+                .map(|value| FlagValue::Object { value }),
+            other => Err(format!("unsupported JSON value: {other}")),
+        }
+    }
+
+    /// The inverse of [`FlagValue::from_json_value`]: the plain JSON form of
+    /// this value, with the type tag stripped. Used to display an object flag
+    /// as the shorthand the web form accepts.
+    pub fn to_shorthand(&self) -> serde_json::Value {
+        match self {
+            FlagValue::Bool { value } => serde_json::Value::Bool(*value),
+            FlagValue::Int { value } => serde_json::json!(value),
+            FlagValue::Float { value } => serde_json::json!(value),
+            FlagValue::String { value } => serde_json::Value::String(value.clone()),
+            FlagValue::Object { value } => serde_json::Value::Object(
+                value
+                    .iter()
+                    .map(|(key, value)| (key.clone(), value.to_shorthand()))
+                    .collect(),
+            ),
         }
     }
 
@@ -229,14 +287,81 @@ mod tests {
     use super::FlagValue;
 
     #[test]
-    fn round_trips_through_json() {
+    fn round_trips_through_shorthand() {
         let map = BTreeMap::from([
             ("enabled".to_owned(), FlagValue::Bool { value: true }),
             ("retries".to_owned(), FlagValue::Int { value: 3 }),
         ]);
         let flag = FlagValue::Object { value: map.clone() };
-        let json = serde_json::to_value(&map).unwrap();
-        assert_eq!(FlagValue::from_form("object", &json.to_string()), Ok(flag));
+        assert_eq!(
+            FlagValue::from_form("object", &flag.to_shorthand().to_string()),
+            Ok(flag)
+        );
+    }
+
+    #[test]
+    fn object_from_form_matches_the_ui_example() {
+        let input = r#"{
+            "1002692827312037910": {
+                "mode": "always_enabled"
+            },
+            "933537038735659089": {
+                "mode": "managed",
+                "threshold": 8
+            }
+        }"#;
+        let expected = FlagValue::Object {
+            value: BTreeMap::from([
+                (
+                    "1002692827312037910".to_owned(),
+                    FlagValue::Object {
+                        value: BTreeMap::from([(
+                            "mode".to_owned(),
+                            FlagValue::String {
+                                value: "always_enabled".to_owned(),
+                            },
+                        )]),
+                    },
+                ),
+                (
+                    "933537038735659089".to_owned(),
+                    FlagValue::Object {
+                        value: BTreeMap::from([
+                            (
+                                "mode".to_owned(),
+                                FlagValue::String {
+                                    value: "managed".to_owned(),
+                                },
+                            ),
+                            ("threshold".to_owned(), FlagValue::Int { value: 8 }),
+                        ]),
+                    },
+                ),
+            ]),
+        };
+        assert_eq!(FlagValue::from_form("object", input), Ok(expected));
+    }
+
+    #[test]
+    fn object_from_form_infers_scalar_types() {
+        let input = r#"{"s":"8","b":true,"i":8,"f":8.0}"#;
+        let expected = FlagValue::Object {
+            value: BTreeMap::from([
+                ("s".to_owned(), FlagValue::String { value: "8".to_owned() }),
+                ("b".to_owned(), FlagValue::Bool { value: true }),
+                ("i".to_owned(), FlagValue::Int { value: 8 }),
+                ("f".to_owned(), FlagValue::Float { value: 8.0 }),
+            ]),
+        };
+        assert_eq!(FlagValue::from_form("object", input), Ok(expected));
+    }
+
+    #[test]
+    fn object_from_form_rejects_unsupported_json() {
+        assert!(FlagValue::from_form("object", "not json").is_err());
+        assert!(FlagValue::from_form("object", "[1, 2]").is_err());
+        assert!(FlagValue::from_form("object", "null").is_err());
+        assert!(FlagValue::from_form("object", "\"just a string\"").is_err());
     }
 
     #[test]

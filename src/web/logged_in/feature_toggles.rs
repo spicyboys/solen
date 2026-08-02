@@ -113,7 +113,8 @@ async fn value_input(value: FlagValue) -> Result {
             <input type="text" name="value" value=(value) class=(INPUT)>
         },
         FlagValue::Object { value } => {
-            let json = serde_json::to_string_pretty(&value).unwrap_or_default();
+            let json = serde_json::to_string_pretty(&FlagValue::Object { value }.to_shorthand())
+                .unwrap_or_default();
             view! {
                 <textarea name="value" rows="4" class=(TEXTAREA)>(json)</textarea>
             }

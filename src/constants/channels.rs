@@ -11,6 +11,3 @@ pub static SLURP_SPREAD: GenericChannelId = GenericChannelId::new(83640760234580
 
 // Spicy Games
 pub static GAMES_CHAT: GenericChannelId = GenericChannelId::new(935677093642133564);
-
-// Spicy Sound
-pub static JALAPENO: GenericChannelId = GenericChannelId::new(933537038735659089);
