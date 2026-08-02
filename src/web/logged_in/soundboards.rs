@@ -28,12 +28,15 @@ pub(crate) async fn index(cx: &Cx) -> Result {
     let ctx = app_context::<WebContext>(cx);
     let mut db = ctx.data.db.clone();
 
-    let records = archived_soundboards::Model::all().exec(&mut db).await?;
-    let installed_soundboards = ctx.http.get_guild_soundboards(constants::GUILD_ID).await?;
-    let guild_members = ctx
-        .http
-        .get_guild_members(constants::GUILD_ID, None, None)
-        .await?;
+    let (records_res, installed_soundboards_res, guild_members_res) = tokio::join!(
+        archived_soundboards::Model::all().exec(&mut db),
+        ctx.http.get_guild_soundboards(constants::GUILD_ID),
+        ctx.http.get_guild_members(constants::GUILD_ID, None, None)
+    );
+
+    let records = records_res?;
+    let installed_soundboards = installed_soundboards_res?;
+    let guild_members = guild_members_res?;
 
     view! {
         <div class="flex flex-col gap-4">
