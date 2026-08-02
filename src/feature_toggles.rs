@@ -3,8 +3,8 @@ use std::collections::BTreeMap;
 use async_trait::async_trait;
 use open_feature::{
     EvaluationContext, EvaluationError, EvaluationErrorCode, EvaluationReason, EvaluationResult,
-    provider::{FeatureProvider, ProviderMetadata, ResolutionDetails},
     StructValue, Value,
+    provider::{FeatureProvider, ProviderMetadata, ResolutionDetails},
 };
 use serde::{Deserialize, Serialize};
 use toasty::Db;
@@ -65,8 +65,7 @@ impl FlagValue {
                     object
                         .iter()
                         .map(|(key, value)| {
-                            FlagValue::from_json_value(value)
-                                .map(|value| (key.clone(), value))
+                            FlagValue::from_json_value(value).map(|value| (key.clone(), value))
                         })
                         .collect::<Result<BTreeMap<_, _>, _>>()
                 })
@@ -82,7 +81,9 @@ impl FlagValue {
     fn from_json_value(value: &serde_json::Value) -> Result<Self, String> {
         match value {
             serde_json::Value::Bool(value) => Ok(FlagValue::Bool { value: *value }),
-            serde_json::Value::String(value) => Ok(FlagValue::String { value: value.clone() }),
+            serde_json::Value::String(value) => Ok(FlagValue::String {
+                value: value.clone(),
+            }),
             serde_json::Value::Number(value) => {
                 if let Some(value) = value.as_i64() {
                     Ok(FlagValue::Int { value })
@@ -347,7 +348,12 @@ mod tests {
         let input = r#"{"s":"8","b":true,"i":8,"f":8.0}"#;
         let expected = FlagValue::Object {
             value: BTreeMap::from([
-                ("s".to_owned(), FlagValue::String { value: "8".to_owned() }),
+                (
+                    "s".to_owned(),
+                    FlagValue::String {
+                        value: "8".to_owned(),
+                    },
+                ),
                 ("b".to_owned(), FlagValue::Bool { value: true }),
                 ("i".to_owned(), FlagValue::Int { value: 8 }),
                 ("f".to_owned(), FlagValue::Float { value: 8.0 }),

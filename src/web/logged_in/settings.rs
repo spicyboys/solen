@@ -27,7 +27,7 @@ async fn layout(slot: Result) -> Result {
         <header
             class="sticky top-0 z-10 flex h-14 shrink-0 items-center gap-2 border-b border-border bg-background px-4 lg:h-[60px] lg:px-6"
         >
-            <h1 class="text-lg font-semibold">"Feature toggles"</h1>
+            <h1 class="text-lg font-semibold">"Settings"</h1>
         </header>
         <main class="flex-1 p-4 lg:p-6">(slot?)</main>
     }
@@ -58,13 +58,11 @@ pub(crate) async fn index(cx: &Cx) -> Result {
                                     attrs: attributes! { class="font-medium" },
                                     (record.key.clone())
                                 )
-                                table_cell(
-                                    (record.value.type_name())
-                                )
+                                table_cell((record.value.type_name()))
                                 table_cell(
                                     toggle_value_form(
                                         key: record.key.clone(),
-                                        value: record.value.0.clone(),
+                                        value: record.value.0.clone()
                                     )
                                 )
                             )
@@ -80,15 +78,15 @@ pub(crate) async fn index(cx: &Cx) -> Result {
 #[component]
 async fn toggle_value_form(key: String, value: FlagValue) -> Result {
     view! {
-        <form method="post" action="/feature_toggles/update" class="flex items-center gap-2">
+        <form
+            method="post"
+            action="/settings/update"
+            class="flex items-center gap-2"
+        >
             <input type="hidden" name="key" value=(key)>
             <input type="hidden" name="kind" value=(value.type_name())>
             value_input(value: value)
-            button(
-                size: ButtonSize::Sm,
-                attrs: attributes! { type="submit" },
-                "Save"
-            )
+            button(size: ButtonSize::Sm, attrs: attributes! { type="submit" }, "Save")
         </form>
     }
 }
@@ -115,9 +113,7 @@ async fn value_input(value: FlagValue) -> Result {
         FlagValue::Object { value } => {
             let json = serde_json::to_string_pretty(&FlagValue::Object { value }.to_shorthand())
                 .unwrap_or_default();
-            view! {
-                <textarea name="value" rows="4" class=(TEXTAREA)>(json)</textarea>
-            }
+            view! { <textarea name="value" rows="4" class=(TEXTAREA)>(json)</textarea> }
         }
     }
 }
@@ -129,7 +125,7 @@ struct UpdateFlagForm {
     value: String,
 }
 
-#[route(POST "/feature_toggles/update")]
+#[route(POST "/settings/update")]
 pub(crate) async fn update(cx: &Cx, form: Form<UpdateFlagForm>) -> Result<SeeOther> {
     auth::require_auth(cx).await?;
     let flag = FlagValue::from_form(&form.kind, &form.value).map_err(bad_request)?;
@@ -140,5 +136,5 @@ pub(crate) async fn update(cx: &Cx, form: Form<UpdateFlagForm>) -> Result<SeeOth
         .value(flag)
         .exec(&mut db)
         .await?;
-    Ok(see_other("/feature_toggles"))
+    Ok(see_other("/settings"))
 }

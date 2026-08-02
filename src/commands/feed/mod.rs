@@ -16,7 +16,7 @@ async fn channel_feed_list_autocomplete<'a>(
     ctx: PoiseContext<'a>,
     _: &'a str,
 ) -> poise::serenity_prelude::CreateAutocompleteResponse<'a> {
-    let channel_id = ctx.channel_id().get() as i64;
+    let channel_id = ctx.channel_id().to_string();
     let mut db = ctx.data().db.clone();
     let feeds = feeds::Model::all()
         .filter(feeds::Model::fields().channel_id().eq(channel_id))

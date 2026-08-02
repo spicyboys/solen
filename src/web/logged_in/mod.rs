@@ -1,5 +1,6 @@
 mod birthdays;
-mod feature_toggles;
+mod feeds;
+mod settings;
 mod soundboards;
 
 use topcoat::{
@@ -65,10 +66,25 @@ async fn root_layout(cx: &Cx, slot: Result) -> Result {
                                 )
                                 sidebar_menu_item(
                                     sidebar_menu_button(
-                                        attrs: attributes! { href="/feature-toggles" },
-                                        is_active: uri.path() == "/feature-toggles",
-                                        icon(data: iconify_icon!("feather:toggle-left"))
-                                        "Feature toggles"
+                                        attrs: attributes! { href="/feeds" },
+                                        is_active: uri.path() == "/feeds",
+                                        icon(data: iconify_icon!("feather:rss"))
+                                        "Feeds"
+                                    )
+                                )
+                            )
+                        )
+                    )
+                    sidebar_group(
+                        sidebar_group_label("Admin")
+                        sidebar_group_content(
+                            sidebar_menu(
+                                sidebar_menu_item(
+                                    sidebar_menu_button(
+                                        attrs: attributes! { href="/settings" },
+                                        is_active: uri.path() == "/settings",
+                                        icon(data: iconify_icon!("feather:settings"))
+                                        "Settings"
                                     )
                                 )
                             )

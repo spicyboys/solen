@@ -24,7 +24,7 @@ pub async fn subscribe(
     let channel_id = ctx.channel_id().get().to_string();
     let mut db = ctx.data().db.clone();
     toasty::create!(feeds::Model {
-        channel_id: channel_id.parse::<i64>().unwrap_or_default(),
+        channel_id,
         feed: normalized_url.clone(),
         latest_post: String::new(),
     })

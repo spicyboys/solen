@@ -7,13 +7,14 @@ pub async fn unsubscribe(
     ctx: PoiseContext<'_>,
     #[autocomplete = "channel_feed_list_autocomplete"] feed: String,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let channel_id = ctx.channel_id().get() as i64;
+    let channel_id = ctx.channel_id().to_string();
     let mut db = ctx.data().db.clone();
-    let Some(subscription) = feeds::Model::filter(feeds::Model::fields().channel_id().eq(channel_id))
-        .filter(feeds::Model::fields().feed().eq(feed.clone()))
-        .first()
-        .exec(&mut db)
-        .await?
+    let Some(subscription) =
+        feeds::Model::filter(feeds::Model::fields().channel_id().eq(channel_id))
+            .filter(feeds::Model::fields().feed().eq(feed.clone()))
+            .first()
+            .exec(&mut db)
+            .await?
     else {
         ctx.say(format!("Unknown feed {}", feed)).await?;
         return Ok(());

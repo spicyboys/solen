@@ -5,7 +5,7 @@ use toasty::Model;
 pub struct Model {
     #[key]
     pub id: i32,
-    pub channel_id: i64,
+    pub channel_id: String,
     pub feed: String,
     pub latest_post: String,
 }

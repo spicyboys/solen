@@ -73,7 +73,11 @@ pub(super) fn truncate_description(description: &str) -> String {
 
 pub fn parse_html(html: &str) -> Result<String> {
     let options = ConversionOptions::builder().skip_images(true).build();
-    Ok(convert(html, Some(options))?.content.unwrap_or_default().trim_end().to_string())
+    Ok(convert(html, Some(options))?
+        .content
+        .unwrap_or_default()
+        .trim_end()
+        .to_string())
 }
 
 #[cfg(test)]

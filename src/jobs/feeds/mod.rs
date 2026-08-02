@@ -1,6 +1,8 @@
 pub mod ntfy;
 pub mod rss;
 
+use std::str::FromStr;
+
 use anyhow::{Result, bail};
 use chrono::DateTime;
 use poise::serenity_prelude as serenity;
@@ -54,7 +56,7 @@ async fn sync_ntfy_job(ctx: &JobContext, job: &feeds::Model) -> Result<()> {
     };
 
     let topic = job.feed.rsplit('/').next().unwrap_or_default().to_string();
-    let channel_id = GenericChannelId::new(job.channel_id as u64);
+    let channel_id = GenericChannelId::from_str(&job.channel_id)?;
     for message in to_post {
         channel_id
             .send_message(&ctx.discord_http, ntfy::build_message(message, &topic))
@@ -106,7 +108,7 @@ async fn sync_rss_job(ctx: &JobContext, job: &feeds::Model) -> Result<()> {
         vec![items[0]]
     };
 
-    let channel_id = GenericChannelId::new(job.channel_id as u64);
+    let channel_id = GenericChannelId::from_str(&job.channel_id)?;
     for item in posts.iter().rev() {
         channel_id
             .send_message(&ctx.discord_http, rss::build_message(item)?)
@@ -117,7 +119,11 @@ async fn sync_rss_job(ctx: &JobContext, job: &feeds::Model) -> Result<()> {
         let mut model = job.clone();
         model.latest_post = latest_post_id.clone();
         let mut db = ctx.db.clone();
-        model.update().latest_post(latest_post_id).exec(&mut db).await?;
+        model
+            .update()
+            .latest_post(latest_post_id)
+            .exec(&mut db)
+            .await?;
     }
 
     Ok(())
