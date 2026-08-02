@@ -4,6 +4,7 @@ use topcoat::{
     Result,
     context::{Cx, app_context},
     cookie::{Cookie, Cookies, SameSite, cookies, time as cookie_time},
+    icon::{icon, iconify::iconify_icon},
     router::{
         error::{SeeOther, internal_server_error, redirect, see_other},
         page, query_params, route,
@@ -11,16 +12,14 @@ use topcoat::{
     session::{Token, TokenHash, TokenStore, TokenStoreFuture, start, stop, token_hash},
     view::view,
 };
-
-use topcoat::icon::{icon, iconify::iconify_icon};
-
-use crate::components::button::{ButtonSize, ButtonVariant, button_variants};
 use tracing::{info, trace, warn};
 
-use crate::constants;
-use crate::models::web_sessions;
-use crate::web::WebContext;
-use crate::web::discord;
+use crate::{
+    components::button::{ButtonSize, ButtonVariant, button_variants},
+    constants,
+    models::web_sessions,
+    web::{WebContext, discord},
+};
 
 const SESSION_COOKIE: &str = "session";
 const OAUTH_STATE_COOKIE: &str = "oauth_state";
@@ -135,26 +134,6 @@ pub async fn require_auth(cx: &Cx) -> Result<String> {
 
 fn hash_to_hex(hash: &TokenHash) -> String {
     hash.iter().map(|byte| format!("{byte:02x}")).collect()
-}
-
-#[page("/login")]
-pub(crate) async fn login(cx: &Cx) -> Result {
-    if current_user_id(cx).await.is_some() {
-        return Err(redirect("/").into());
-    }
-    view! {
-        <div class="flex w-full flex-col items-center gap-4 rounded-lg border border-border bg-background p-8 text-center shadow-sm">
-            <div class="space-y-1">
-                <h1 class="text-2xl font-semibold">"Solen"</h1>
-            </div>
-            <a
-                href="/oauth/discord"
-                class=(button_variants(ButtonVariant::Primary, ButtonSize::Md))
-            >
-                "Log in with Discord"
-            </a>
-        </div>
-    }
 }
 
 #[route(GET "/oauth/discord")]
@@ -281,8 +260,12 @@ pub(crate) async fn denied(cx: &Cx) -> Result {
         return Err(redirect("/").into());
     }
     view! {
-        <div class="flex w-full flex-col items-center gap-4 rounded-lg border border-border bg-background p-8 text-center shadow-sm">
-            <span class="flex size-12 items-center justify-center rounded-lg bg-primary text-primary-foreground">
+        <div
+            class="flex w-full flex-col items-center gap-4 rounded-lg border border-border bg-background p-8 text-center shadow-sm"
+        >
+            <span
+                class="flex size-12 items-center justify-center rounded-lg bg-primary text-primary-foreground"
+            >
                 icon(data: iconify_icon!("feather:shield"))
             </span>
             <div class="space-y-1">

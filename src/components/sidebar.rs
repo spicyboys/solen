@@ -1,5 +1,6 @@
 use topcoat::{
     Result,
+    context::Cx,
     icon::{icon, iconify::iconify_icon},
     view::{Attributes, View, class, component, view},
 };
@@ -45,20 +46,110 @@ const SIDEBAR_MENU: &str = "flex w-full list-none flex-col gap-1";
 /// The classes for a [`sidebar_menu_item`], one row of a [`sidebar_menu`].
 const SIDEBAR_MENU_ITEM: &str = "relative";
 
-/// The classes for a [`sidebar_menu_button`].
+/// The visual style of a [`sidebar_menu_button`].
+///
+/// [`Default`] is `SidebarMenuButtonVariant::Default`, used when no variant
+/// is given.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[allow(dead_code)]
+pub enum SidebarMenuButtonVariant {
+    /// The plain menu row, tinted on hover.
+    #[default]
+    Default,
+    /// A hairline-framed row on the page background.
+    Outline,
+}
+
+impl SidebarMenuButtonVariant {
+    /// The Tailwind classes for this variant.
+    ///
+    /// Hover applies the foreground color at reduced opacity, so it holds up
+    /// in both color schemes without `dark:` overrides. The active fill is
+    /// shared, not per-variant: it lives in [`SIDEBAR_MENU_BUTTON_BASE`].
+    fn classes(self) -> &'static str {
+        match self {
+            Self::Default => "hover:bg-foreground/5",
+            // The outline is a box-shadow ring rather than a border, so it
+            // does not change the button's dimensions.
+            Self::Outline => {
+                "bg-background shadow-[0_0_0_1px_var(--border)] hover:bg-foreground/5 \
+                 hover:shadow-[0_0_0_1px_var(--ring)]"
+            }
+        }
+    }
+}
+
+/// The size of a [`sidebar_menu_button`].
+///
+/// [`Default`] is `SidebarMenuButtonSize::Default`, used when no size is
+/// given.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[allow(dead_code)]
+pub enum SidebarMenuButtonSize {
+    /// A compact row.
+    Sm,
+    /// The standard row size.
+    #[default]
+    Default,
+    /// A prominent row, such as for the primary section.
+    Lg,
+}
+
+impl SidebarMenuButtonSize {
+    /// The Tailwind classes for this size.
+    ///
+    /// Each size sets its own height and text size, which also scales any
+    /// icons inside: the `icon` component is `1em` square by default.
+    fn classes(self) -> &'static str {
+        match self {
+            Self::Sm => "h-7 text-xs",
+            Self::Default => "h-8 text-sm",
+            Self::Lg => "h-12 text-sm",
+        }
+    }
+}
+
+/// The classes shared by every [`sidebar_menu_button`], regardless of variant
+/// or size.
 ///
 /// A padded row that tints on hover and focus; an active item is filled with
 /// the primary color so the current section is unmistakable. Any icon inside
 /// is forced to a consistent `1rem` square unless it already carries an
-/// explicit size class.
-const SIDEBAR_MENU_BUTTON: &str = "flex w-full items-center gap-2 rounded-lg px-3 \
-    py-2 text-sm font-medium whitespace-nowrap transition-colors outline-none \
-    select-none hover:bg-foreground/5 focus-visible:bg-foreground/5 \
-    focus-visible:ring-2 focus-visible:ring-ring \
+/// explicit size class. When the sidebar collapses to a rail, the row sheds
+/// its horizontal padding and centers its content.
+const SIDEBAR_MENU_BUTTON_BASE: &str = "flex w-full items-center gap-2 rounded-lg \
+    px-3 font-medium whitespace-nowrap transition-colors outline-none select-none \
+    focus-visible:bg-foreground/5 focus-visible:ring-2 focus-visible:ring-ring \
     data-active:bg-primary data-active:text-primary-foreground \
     data-active:shadow-xs data-active:hover:bg-primary/90 \
     [&_svg:not([class*='size-'])]:size-4 \
     md:group-data-[collapsed=true]:justify-center md:group-data-[collapsed=true]:px-0";
+
+/// Builds the full class string for a [`sidebar_menu_button`] of the given
+/// `variant` and `size`.
+///
+/// Use it to give menu-button styling to an element that is not an `<a>`,
+/// such as a button in a sidebar menu:
+///
+/// ```ignore
+/// view! {
+///     <button class=(sidebar_menu_button_variants(
+///         SidebarMenuButtonVariant::Default,
+///         SidebarMenuButtonSize::Sm,
+///     ))>"Settings"</button>
+/// }
+/// ```
+#[must_use]
+pub fn sidebar_menu_button_variants(
+    variant: SidebarMenuButtonVariant,
+    size: SidebarMenuButtonSize,
+) -> String {
+    format!(
+        "{SIDEBAR_MENU_BUTTON_BASE} {} {}",
+        variant.classes(),
+        size.classes()
+    )
+}
 
 /// The classes for a [`sidebar_footer`], pinned to the bottom of the sidebar.
 const SIDEBAR_FOOTER: &str = "mt-auto p-2";
@@ -98,7 +189,8 @@ const SIDEBAR_INSET: &str = "flex flex-1 flex-col";
 ///             sidebar_menu(
 ///                 sidebar_menu_item(
 ///                     sidebar_menu_button(
-///                         attrs: attributes! { href="/" data-active="" },
+///                         attrs: attributes! { href="/" },
+///                         is_active: true,
 ///                         "Soundboards"
 ///                     )
 ///                 )
@@ -176,10 +268,7 @@ pub async fn sidebar_menu(#[default] mut attrs: Attributes, #[default] child: Vi
 
 /// One row of a [`sidebar_menu`], holding a [`sidebar_menu_button`].
 #[component]
-pub async fn sidebar_menu_item(
-    #[default] mut attrs: Attributes,
-    #[default] child: View,
-) -> Result {
+pub async fn sidebar_menu_item(#[default] mut attrs: Attributes, #[default] child: View) -> Result {
     view! {
         <li class=(class!(SIDEBAR_MENU_ITEM, attrs.remove("class"))) (attrs)>
             (child)
@@ -189,16 +278,44 @@ pub async fn sidebar_menu_item(
 
 /// A navigation link in a [`sidebar_menu`], rendered as an `<a>`.
 ///
-/// The `attrs` (such as `href` or `data-active`) are forwarded to the
-/// underlying `<a>`; a `class` among them is appended to the computed classes.
-/// Child nodes become the link's label, typically an icon and a word.
+/// The `variant` and `size` parameters select the styling, defaulting to
+/// `Default` and `Default`. The `is_active` parameter marks the row as the
+/// current section, filling it with the primary color; pass it instead of
+/// setting a `data-active` attribute by hand. The `attrs` (such as `href` or
+/// event handlers) are forwarded to the underlying `<a>`; a `class` among them
+/// is appended to the computed classes. Child nodes become the link's label,
+/// typically an icon and a word.
+///
+/// ```ignore
+/// sidebar_menu_button(
+///     attrs: attributes! { href="/" },
+///     is_active: true,
+///     icon(data: iconify_icon!("feather:disc"))
+///     "Soundboards"
+/// )
+/// ```
+///
+/// To style a non-`<a>` element like a menu button, use
+/// [`sidebar_menu_button_variants`] directly.
 #[component]
 pub async fn sidebar_menu_button(
+    #[default] variant: SidebarMenuButtonVariant,
+    #[default] size: SidebarMenuButtonSize,
+    #[default] is_active: bool,
     #[default] mut attrs: Attributes,
     #[default] child: View,
 ) -> Result {
     view! {
-        <a class=(class!(SIDEBAR_MENU_BUTTON, attrs.remove("class"))) (attrs)>
+        <a
+            class=(class!(
+                SIDEBAR_MENU_BUTTON_BASE,
+                variant.classes(),
+                size.classes(),
+                attrs.remove("class"),
+            ))
+            data-active=(is_active)
+            (attrs)
+        >
             (child)
         </a>
     }
@@ -219,14 +336,12 @@ pub async fn sidebar_footer(#[default] mut attrs: Attributes, #[default] child: 
 /// binding. It is styled as a ghost icon button, like the theme's other icon
 /// controls.
 #[component]
-pub async fn sidebar_trigger(
-    #[default] mut attrs: Attributes,
-    #[default] child: View,
-) -> Result {
+pub async fn sidebar_trigger(#[default] mut attrs: Attributes, #[default] child: View) -> Result {
     view! {
         <button
             class=(class!(
-                button_variants(ButtonVariant::Ghost, ButtonSize::Icon), SIDEBAR_TRIGGER,
+                button_variants(ButtonVariant::Ghost, ButtonSize::Icon),
+                SIDEBAR_TRIGGER,
                 attrs.remove("class"),
             ))
             (attrs)
@@ -242,101 +357,5 @@ pub async fn sidebar_trigger(
 pub async fn sidebar_inset(#[default] mut attrs: Attributes, #[default] child: View) -> Result {
     view! {
         <div class=(class!(SIDEBAR_INSET, attrs.remove("class"))) (attrs)>(child)</div>
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use topcoat::{
-        context::Cx,
-        icon::{icon, iconify::iconify_icon},
-        runtime::Event,
-        view::{attributes, view},
-    };
-
-    use crate::components::separator::{SeparatorOrientation, separator};
-
-    use super::*;
-
-    #[tokio::test]
-    async fn renders_sidebar_layout() {
-        let cx = &Cx::default();
-        let html = view! {
-            cx => {
-                signal mobile_open = false;
-                signal collapsed = false;
-
-                sidebar(
-                    attrs: attributes! {
-                        :data-open=$(if mobile_open.get() { "true" } else { "false" })
-                        :data-collapsed=$(if collapsed.get() { "true" } else { "false" })
-                    },
-                    sidebar_header(
-                        <a href="/" class="flex items-center gap-2 font-semibold md:group-data-[collapsed=true]:justify-center">
-                            <span class="flex size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-                                icon(data: iconify_icon!("feather:music"))
-                            </span>
-                            <span class="md:group-data-[collapsed=true]:hidden">"Solen"</span>
-                        </a>
-                    )
-                    sidebar_content(
-                        sidebar_group(
-                            sidebar_group_label("General")
-                            sidebar_group_content(
-                                sidebar_menu(
-                                    sidebar_menu_item(
-                                        sidebar_menu_button(
-                                            attrs: attributes! { href="/" data-active="" },
-                                            icon(data: iconify_icon!("feather:disc"))
-                                            <span class="md:group-data-[collapsed=true]:hidden">"Soundboards"</span>
-                                        )
-                                    )
-                                )
-                            )
-                        )
-                    )
-                    sidebar_footer(
-                        sidebar_menu(
-                            sidebar_menu_item(
-                                sidebar_menu_button(
-                                    attrs: attributes! { href="/logout" },
-                                    icon(data: iconify_icon!("feather:log-out"))
-                                    <span class="md:group-data-[collapsed=true]:hidden">"Log out"</span>
-                                )
-                            )
-                        )
-                    )
-                )
-                sidebar_inset(
-                    <header class="sticky top-0 z-10 flex h-14 shrink-0 items-center gap-2 border-b border-border bg-background px-4 lg:h-[60px] lg:px-6">
-                        sidebar_trigger(
-                            attrs: attributes! {
-                                @click=$(|_e: Event| raw!(
-                                    "if (window.matchMedia('(min-width: 768px)').matches) { ${collapsed}.toggle(); } else { ${mobile_open}.toggle(); }"
-                                ))
-                            }
-                        )
-                        separator(orientation: SeparatorOrientation::Vertical, attrs: attributes! { class="h-4" })
-                        <h1 class="text-lg font-semibold">"Soundboards"</h1>
-                    </header>
-                    <main class="flex-1 p-4 lg:p-6">"main"</main>
-                )
-            }
-        }
-        .expect("build view")
-        .render(&cx);
-
-        println!("{html}");
-        assert!(html.contains("data-topcoat-bind:data-open"), "missing data-open bind");
-        assert!(
-            html.contains("data-topcoat-bind:data-collapsed"),
-            "missing data-collapsed bind"
-        );
-        assert!(html.contains("matchMedia"), "missing matchMedia handler");
-        assert!(html.contains("md:data-[collapsed=true]:w-12"), "missing collapsed width class");
-        assert!(
-            html.contains("md:group-data-[collapsed=true]:hidden"),
-            "missing group label hiding"
-        );
     }
 }

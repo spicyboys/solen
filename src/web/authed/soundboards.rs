@@ -1,24 +1,29 @@
-use crate::components::button::{ButtonSize, ButtonVariant, button};
-use crate::components::table::{
-    table, table_body, table_cell, table_head, table_header, table_row,
+use topcoat::{
+    Result,
+    context::{Cx, app_context},
+    icon::{icon, iconify::iconify_icon},
+    router::{
+        error::{SeeOther, internal_server_error, not_found, see_other},
+        {Body, Response, header, layout, page, path_param, route},
+    },
+    runtime::Event,
+    view::{attributes, component, view},
 };
-use topcoat::Result;
-use topcoat::context::{Cx, app_context};
-use topcoat::icon::{icon, iconify::iconify_icon};
-use topcoat::router::error::{SeeOther, internal_server_error, not_found, see_other};
-use topcoat::router::{Body, Response, header, layout, page, path_param, route};
-use topcoat::runtime::Event;
-use topcoat::view::{attributes, component, view};
 
-use crate::constants;
-use crate::models::archived_soundboards;
-use crate::web::WebContext;
-use crate::web::auth;
+use crate::{
+    components::{
+        button::{ButtonSize, ButtonVariant, button},
+        table::{table, table_body, table_cell, table_head, table_header, table_row},
+    },
+    constants,
+    models::archived_soundboards,
+    web::{WebContext, auth},
+};
 
 #[path_param(error = not_found)]
 struct SoundId(String);
 
-#[page("/soundboards")]
+#[page]
 pub(crate) async fn index(cx: &Cx) -> Result {
     auth::require_auth(cx).await?;
     let ctx = app_context::<WebContext>(cx);
@@ -50,7 +55,10 @@ pub(crate) async fn index(cx: &Cx) -> Result {
                                     (record.name)
                                 )
                                 table_cell(
-                                    (record.original_uploader.clone().unwrap_or_else(|| "unknown".to_owned()))
+                                    (record
+                                        .original_uploader
+                                        .clone()
+                                        .unwrap_or_else(|| "unknown".to_owned()))
                                 )
                                 table_cell(
                                     preview_soundboard(sound_id: record.sound_id.clone())
@@ -59,16 +67,19 @@ pub(crate) async fn index(cx: &Cx) -> Result {
                                     <form
                                         id=(format!("restore-{}", record.sound_id))
                                         method="post"
-                                        action=(format!("/soundboards/{}/restore", record.sound_id))
-                                    >
-                                    </form>
+                                        action=(format!(
+                                            "/soundboards/{}/restore", record.sound_id
+                                        ))
+                                    ></form>
                                     button(
                                         variant: ButtonVariant::Outline,
                                         size: ButtonSize::Sm,
                                         attrs: attributes! {
                                             type="submit"
                                             form=(format!("restore-{}", record.sound_id))
-                                            disabled=(installed_soundboards.iter().any(|s| s.id.to_string() == record.sound_id))
+                                            disabled=(installed_soundboards
+                                                .iter()
+                                                .any(|s| s.id.to_string() == record.sound_id))
                                         },
                                         "Restore"
                                     )
@@ -82,10 +93,12 @@ pub(crate) async fn index(cx: &Cx) -> Result {
     }
 }
 
-#[layout("/soundboards")]
+#[layout]
 async fn layout(slot: Result) -> Result {
     view! {
-        <header class="sticky top-0 z-10 flex h-14 shrink-0 items-center gap-2 border-b border-border bg-background px-4 lg:h-[60px] lg:px-6">
+        <header
+            class="sticky top-0 z-10 flex h-14 shrink-0 items-center gap-2 border-b border-border bg-background px-4 lg:h-[60px] lg:px-6"
+        >
             <h1 class="text-lg font-semibold">"Soundboards"</h1>
             <p class="text-sm text-muted-foreground">
                 "Archived soundboards from the server."
@@ -103,9 +116,9 @@ async fn preview_soundboard(sound_id: String) -> Result {
             variant: ButtonVariant::Outline,
             size: ButtonSize::Icon,
             attrs: attributes! {
-                @click=$(|_e: Event| raw!(
-                    "new Audio('/soundboards/' + ${sound_id} + '/preview').play()"
-                ))
+                @click=$(|_e: Event| {
+                    raw!("new Audio('/soundboards/' + ${sound_id} + '/preview').play()")
+                })
             },
             icon(data: iconify_icon!("feather:play"))
         )

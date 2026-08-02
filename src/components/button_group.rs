@@ -127,7 +127,9 @@ pub async fn button_group(
             data-slot="button-group"
             data-orientation=(orientation.as_str())
             class=(class!(
-                BUTTON_GROUP, orientation.classes(), attrs.remove("class"),
+                BUTTON_GROUP,
+                orientation.classes(),
+                attrs.remove("class"),
             ))
             (attrs)
         >

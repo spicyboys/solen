@@ -1,10 +1,4 @@
 pub mod button;
 pub mod button_group;
-pub mod navigation_menu;
-pub mod table;
-pub mod checkbox;
-pub mod select;
-pub mod dropdown_menu;
-pub mod label;
 pub mod sidebar;
-pub mod separator;
+pub mod table;
