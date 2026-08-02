@@ -51,73 +51,63 @@ async fn apply_soundboard_state(ctx: &Context, channel: &GuildChannel, state: So
 
 /// Ensure the everyone role does not deny soundboard usage in `channel`.
 async fn enable_soundboard(ctx: &Context, channel: &GuildChannel) {
-    if let Some(mut overwrite) = find_existing_overwrite(channel)
-        && overwrite.deny.contains(Permissions::USE_SOUNDBOARD)
-    {
-        overwrite.deny.remove(Permissions::USE_SOUNDBOARD);
+    let Some(mut overwrite) = find_existing_overwrite(channel) else {
+        return;
+    };
 
-        // If both allow and deny are now empty, delete the overwrite
-        if overwrite.allow.is_empty() && overwrite.deny.is_empty() {
-            if let Err(e) = channel
-                .id
-                .delete_permission(
-                    &ctx.http,
-                    PermissionOverwriteType::Role(channel.base.guild_id.everyone_role()),
-                    None,
-                )
-                .await
-            {
-                eprintln!("Failed to delete permission override: {:?}", e);
-            }
-        } else {
-            // Update the overwrite with soundboard removed
-            if let Err(e) = channel
-                .id
-                .create_permission(&ctx.http, overwrite, None)
-                .await
-            {
-                eprintln!("Failed to update soundboard permission override: {:?}", e);
-            }
-        }
+    if !overwrite.deny.contains(Permissions::USE_SOUNDBOARD) {
+        return;
+    }
 
-        _ = channel
-            .send_message(
-                ctx.http(),
-                CreateMessage::new().content("Soundboard has been enabled"),
+    overwrite.deny.remove(Permissions::USE_SOUNDBOARD);
+
+    // If both allow and deny are now empty, delete the overwrite
+    let res = if overwrite.allow.is_empty() && overwrite.deny.is_empty() {
+        channel
+            .id
+            .delete_permission(
+                &ctx.http,
+                PermissionOverwriteType::Role(channel.base.guild_id.everyone_role()),
+                None,
             )
             .await
-    }
+    } else {
+        // Update the overwrite with soundboard removed
+        channel
+            .id
+            .create_permission(&ctx.http, overwrite, None)
+            .await
+    };
+
+    match res {
+        Ok(_) => {
+            _ = channel
+                .send_message(
+                    ctx.http(),
+                    CreateMessage::new().content("Soundboard has been enabled"),
+                )
+                .await
+        }
+        Err(e) => {
+            error!("Failed to update channel permission override: {:?}", e)
+        }
+    };
 }
 
 /// Ensure the everyone role denies soundboard usage in `channel`.
 async fn disable_soundboard(ctx: &Context, channel: &GuildChannel) {
-    let send_disabled_message = async || {
-        _ = channel
-            .send_message(
-                ctx.http(),
-                CreateMessage::new().content("Soundboard has been disabled"),
-            )
-            .await
-    };
-
-    match find_existing_overwrite(channel) {
+    let res = match find_existing_overwrite(channel) {
         Some(mut overwrite) => {
-            // Add soundboard to deny if not already there
-            if !overwrite.deny.contains(Permissions::USE_SOUNDBOARD) {
-                overwrite.deny |= Permissions::USE_SOUNDBOARD;
-                match channel
-                    .id
-                    .create_permission(&ctx.http, overwrite, None)
-                    .await
-                {
-                    Ok(_) => {
-                        send_disabled_message().await;
-                    }
-                    Err(e) => {
-                        error!("Failed to update soundboard permission override: {:?}", e)
-                    }
-                }
+            if overwrite.deny.contains(Permissions::USE_SOUNDBOARD) {
+                return;
             }
+
+            // Add soundboard to deny if not already there
+            overwrite.deny |= Permissions::USE_SOUNDBOARD;
+            channel
+                .id
+                .create_permission(&ctx.http, overwrite, None)
+                .await
         }
         None => {
             // Create new permission override
@@ -126,20 +116,26 @@ async fn disable_soundboard(ctx: &Context, channel: &GuildChannel) {
                 deny: Permissions::USE_SOUNDBOARD,
                 kind: PermissionOverwriteType::Role(channel.base.guild_id.everyone_role()),
             };
-            match channel
+            channel
                 .id
                 .create_permission(&ctx.http, everyone_overwrite, None)
                 .await
-            {
-                Ok(_) => {
-                    send_disabled_message().await;
-                }
-                Err(e) => {
-                    error!("Failed to update soundboard permission override: {:?}", e)
-                }
-            }
         }
-    }
+    };
+
+    match res {
+        Ok(_) => {
+            _ = channel
+                .send_message(
+                    ctx.http(),
+                    CreateMessage::new().content("Soundboard has been disabled"),
+                )
+                .await
+        }
+        Err(e) => {
+            error!("Failed to update channel permission override: {:?}", e)
+        }
+    };
 }
 
 fn find_existing_overwrite(channel: &GuildChannel) -> Option<PermissionOverwrite> {
