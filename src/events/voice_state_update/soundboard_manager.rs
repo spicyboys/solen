@@ -1,4 +1,4 @@
-use poise::serenity_prelude as serenity;
+use poise::serenity_prelude::{self as serenity, GenericChannelId};
 
 use serenity::{
     all::GuildChannel,
@@ -9,9 +9,15 @@ use serenity::{
     prelude::*,
 };
 
+use crate::constants::channels::JALAPENO;
+
 const CHANNEL_MEMBER_THRESHOLD: usize = 8;
 
 pub async fn handle_connection(ctx: &Context, channel: GuildChannel) {
+    if GenericChannelId::from(channel.id) != JALAPENO {
+        return;
+    }
+
     let Ok(members) = channel.members(&ctx.cache) else {
         return;
     };
@@ -54,6 +60,10 @@ pub async fn handle_connection(ctx: &Context, channel: GuildChannel) {
 }
 
 pub async fn handle_disconnection(ctx: &Context, channel: GuildChannel) {
+    if GenericChannelId::from(channel.id) != JALAPENO {
+        return;
+    }
+
     let Ok(members) = channel.members(&ctx.cache) else {
         return;
     };

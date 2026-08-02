@@ -1,5 +1,5 @@
 use poise::serenity_prelude::{
-    Channel, ChannelId, ChannelType, Context, GenericChannelId, GuildChannel, GuildId, VoiceState,
+    CacheHttp, ChannelId, ChannelType, Context, GuildChannel, GuildId, VoiceState,
 };
 
 mod soundboard_manager;
@@ -24,9 +24,8 @@ async fn get_voice_channel(
     channel_id: Option<ChannelId>,
     guild_id: Option<GuildId>,
 ) -> Option<GuildChannel> {
-    if let Some(channel_id) = channel_id.map(GenericChannelId::from)
-        && channel_id != crate::constants::channels::POBLANO
-        && let Ok(Channel::Guild(channel)) = channel_id.to_channel(ctx, guild_id).await
+    if let Some(channel_id) = channel_id
+        && let Ok(channel) = channel_id.to_guild_channel(ctx.http(), guild_id).await
         && channel.base.kind == ChannelType::Voice
     {
         Some(channel)

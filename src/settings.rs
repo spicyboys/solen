@@ -27,7 +27,7 @@ impl Default for WebSettings {
         Self {
             host: default_host(),
             port: default_port(),
-            secure_cookies: false,
+            secure_cookies: default_true(),
         }
     }
 }
