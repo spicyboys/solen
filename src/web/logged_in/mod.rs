@@ -1,4 +1,5 @@
 mod birthdays;
+mod feature_toggles;
 mod soundboards;
 
 use topcoat::{
@@ -60,6 +61,14 @@ async fn root_layout(cx: &Cx, slot: Result) -> Result {
                                         is_active: uri.path() == "/birthdays",
                                         icon(data: iconify_icon!("feather:calendar"))
                                         "Birthdays"
+                                    )
+                                )
+                                sidebar_menu_item(
+                                    sidebar_menu_button(
+                                        attrs: attributes! { href="/feature-toggles" },
+                                        is_active: uri.path() == "/feature-toggles",
+                                        icon(data: iconify_icon!("feather:toggle-left"))
+                                        "Feature toggles"
                                     )
                                 )
                             )

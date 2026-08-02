@@ -14,6 +14,10 @@ use crate::constants::channels::JALAPENO;
 const CHANNEL_MEMBER_THRESHOLD: usize = 8;
 
 pub async fn handle_connection(ctx: &Context, channel: GuildChannel) {
+    if !is_soundboard_disabler_enabled().await {
+        return;
+    }
+
     if GenericChannelId::from(channel.id) != JALAPENO {
         return;
     }
@@ -112,4 +116,12 @@ fn find_existing_overwrite(channel: &GuildChannel) -> Option<PermissionOverwrite
             overwrite.kind == PermissionOverwriteType::Role(channel.base.guild_id.everyone_role())
         })
         .cloned()
+}
+
+async fn is_soundboard_disabler_enabled() -> bool {
+    let client = open_feature::OpenFeature::singleton().await.create_client();
+    client
+        .get_bool_value("enable_soundboard_disabler", None, None)
+        .await
+        .unwrap_or(true)
 }

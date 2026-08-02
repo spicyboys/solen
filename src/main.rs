@@ -2,6 +2,7 @@ mod commands;
 mod components;
 mod constants;
 mod events;
+mod feature_toggles;
 mod jobs;
 mod models;
 mod s3;
@@ -47,10 +48,16 @@ async fn main() {
             models::feeds::Model,
             models::archived_soundboards::Model,
             models::web_sessions::Model,
+            models::feature_toggles::Model,
         ))
         .build(Connect::new(&settings.database_url).await.unwrap())
         .await
         .unwrap();
+
+    open_feature::OpenFeature::singleton_mut()
+        .await
+        .set_provider(feature_toggles::FeatureToggleProvider::new(db.clone()))
+        .await;
 
     let token = Token::try_from(settings.discord_token.clone()).expect("Invalid bot token");
     let intents = GatewayIntents::GUILD_MESSAGES
