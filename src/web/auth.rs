@@ -4,18 +4,15 @@ use topcoat::{
     Result,
     context::{Cx, app_context},
     cookie::{Cookie, Cookies, SameSite, cookies, time as cookie_time},
-    icon::{icon, iconify::iconify_icon},
     router::{
         error::{SeeOther, internal_server_error, redirect, see_other},
-        page, query_params, route,
+        query_params, route,
     },
     session::{Token, TokenHash, TokenStore, TokenStoreFuture, start, stop, token_hash},
-    view::view,
 };
 use tracing::{info, trace, warn};
 
 use crate::{
-    components::button::{ButtonSize, ButtonVariant, button_variants},
     constants,
     models::web_sessions,
     web::{WebContext, discord},
@@ -252,34 +249,4 @@ pub(crate) async fn logout(cx: &Cx) -> Result<SeeOther> {
             .await;
     }
     Ok(see_other("/login"))
-}
-
-#[page("/denied")]
-pub(crate) async fn denied(cx: &Cx) -> Result {
-    if current_user_id(cx).await.is_some() {
-        return Err(redirect("/").into());
-    }
-    view! {
-        <div
-            class="flex w-full flex-col items-center gap-4 rounded-lg border border-border bg-background p-8 text-center shadow-sm"
-        >
-            <span
-                class="flex size-12 items-center justify-center rounded-lg bg-primary text-primary-foreground"
-            >
-                icon(data: iconify_icon!("feather:shield"))
-            </span>
-            <div class="space-y-1">
-                <h1 class="text-2xl font-semibold">"Not authorized"</h1>
-                <p class="text-sm text-muted-foreground">
-                    "You must be a member of the server to use this panel."
-                </p>
-            </div>
-            <a
-                href="/oauth/discord"
-                class=(button_variants(ButtonVariant::Primary, ButtonSize::Md))
-            >
-                "Try again"
-            </a>
-        </div>
-    }
 }

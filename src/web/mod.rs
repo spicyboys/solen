@@ -1,6 +1,7 @@
 mod auth;
-mod authed;
+mod denied;
 mod discord;
+mod logged_in;
 mod login;
 
 use std::sync::Arc;
