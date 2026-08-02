@@ -33,7 +33,6 @@ pub(crate) async fn index(cx: &Cx) -> Result {
         ctx.http.get_guild_soundboards(constants::GUILD_ID),
         ctx.http.get_guild_members(constants::GUILD_ID, None, None)
     );
-
     let records = records_res?;
     let installed_soundboards = installed_soundboards_res?;
     let guild_members = guild_members_res?;
