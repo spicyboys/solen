@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use open_feature::{StructValue, Value};
-use poise::serenity_prelude as serenity;
+use poise::serenity_prelude::{self as serenity, CreateMessage};
 
 use serenity::{
     all::GuildChannel,
@@ -11,6 +11,7 @@ use serenity::{
     },
     prelude::*,
 };
+use tracing::error;
 
 const DEFAULT_MANAGED_THRESHOLD: i64 = 8;
 
@@ -78,22 +79,43 @@ async fn enable_soundboard(ctx: &Context, channel: &GuildChannel) {
                 eprintln!("Failed to update soundboard permission override: {:?}", e);
             }
         }
+
+        _ = channel
+            .send_message(
+                ctx.http(),
+                CreateMessage::new().content("Soundboard has been enabled"),
+            )
+            .await
     }
 }
 
 /// Ensure the everyone role denies soundboard usage in `channel`.
 async fn disable_soundboard(ctx: &Context, channel: &GuildChannel) {
+    let send_disabled_message = async || {
+        _ = channel
+            .send_message(
+                ctx.http(),
+                CreateMessage::new().content("Soundboard has been disabled"),
+            )
+            .await
+    };
+
     match find_existing_overwrite(channel) {
         Some(mut overwrite) => {
             // Add soundboard to deny if not already there
             if !overwrite.deny.contains(Permissions::USE_SOUNDBOARD) {
                 overwrite.deny |= Permissions::USE_SOUNDBOARD;
-                if let Err(e) = channel
+                match channel
                     .id
                     .create_permission(&ctx.http, overwrite, None)
                     .await
                 {
-                    eprintln!("Failed to update soundboard permission override: {:?}", e);
+                    Ok(_) => {
+                        send_disabled_message().await;
+                    }
+                    Err(e) => {
+                        error!("Failed to update soundboard permission override: {:?}", e)
+                    }
                 }
             }
         }
@@ -104,12 +126,17 @@ async fn disable_soundboard(ctx: &Context, channel: &GuildChannel) {
                 deny: Permissions::USE_SOUNDBOARD,
                 kind: PermissionOverwriteType::Role(channel.base.guild_id.everyone_role()),
             };
-            if let Err(e) = channel
+            match channel
                 .id
                 .create_permission(&ctx.http, everyone_overwrite, None)
                 .await
             {
-                eprintln!("Failed to create soundboard permission override: {:?}", e);
+                Ok(_) => {
+                    send_disabled_message().await;
+                }
+                Err(e) => {
+                    error!("Failed to update soundboard permission override: {:?}", e)
+                }
             }
         }
     }
@@ -161,9 +188,7 @@ impl From<StructValue> for SoundboardManagerConfig {
                     Value::Struct(config) => {
                         let mode = config.fields.get("mode").and_then(Value::as_str)?;
                         match mode {
-                            "always_enabled" => {
-                                Some(SoundboardManagerChannelConfig::AlwaysEnabled)
-                            }
+                            "always_enabled" => Some(SoundboardManagerChannelConfig::AlwaysEnabled),
                             "always_disabled" => {
                                 Some(SoundboardManagerChannelConfig::AlwaysDisabled)
                             }
@@ -190,7 +215,9 @@ fn parse_mode(mode: &str) -> Option<SoundboardManagerChannelConfig> {
     match mode {
         "always_enabled" => Some(SoundboardManagerChannelConfig::AlwaysEnabled),
         "always_disabled" => Some(SoundboardManagerChannelConfig::AlwaysDisabled),
-        "managed" => Some(SoundboardManagerChannelConfig::Managed(DEFAULT_MANAGED_THRESHOLD)),
+        "managed" => Some(SoundboardManagerChannelConfig::Managed(
+            DEFAULT_MANAGED_THRESHOLD,
+        )),
         _ => None,
     }
 }
@@ -232,11 +259,23 @@ mod tests {
         let disabled = SoundboardManagerChannelConfig::AlwaysDisabled;
         let managed = SoundboardManagerChannelConfig::Managed(8);
 
-        assert!(matches!(enabled.desired_state(100), SoundboardState::Enabled));
-        assert!(matches!(disabled.desired_state(0), SoundboardState::Disabled));
+        assert!(matches!(
+            enabled.desired_state(100),
+            SoundboardState::Enabled
+        ));
+        assert!(matches!(
+            disabled.desired_state(0),
+            SoundboardState::Disabled
+        ));
         assert!(matches!(managed.desired_state(7), SoundboardState::Enabled));
-        assert!(matches!(managed.desired_state(8), SoundboardState::Disabled));
-        assert!(matches!(managed.desired_state(9), SoundboardState::Disabled));
+        assert!(matches!(
+            managed.desired_state(8),
+            SoundboardState::Disabled
+        ));
+        assert!(matches!(
+            managed.desired_state(9),
+            SoundboardState::Disabled
+        ));
     }
 
     #[test]
@@ -250,7 +289,10 @@ mod tests {
             "managed_channel".to_owned(),
             open_feature::Value::Struct(open_feature::StructValue {
                 fields: HashMap::from([
-                    ("mode".to_owned(), open_feature::Value::String("managed".to_owned())),
+                    (
+                        "mode".to_owned(),
+                        open_feature::Value::String("managed".to_owned()),
+                    ),
                     ("threshold".to_owned(), open_feature::Value::Int(4)),
                 ]),
             }),
@@ -260,8 +302,7 @@ mod tests {
             open_feature::Value::String("bogus".to_owned()),
         );
 
-        let config =
-            super::SoundboardManagerConfig::from(open_feature::StructValue { fields });
+        let config = super::SoundboardManagerConfig::from(open_feature::StructValue { fields });
 
         assert!(matches!(
             config.0.get("always_channel"),
