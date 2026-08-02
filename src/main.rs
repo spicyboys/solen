@@ -56,7 +56,8 @@ async fn main() {
     let intents = GatewayIntents::GUILD_MESSAGES
         | GatewayIntents::MESSAGE_CONTENT
         | GatewayIntents::GUILDS
-        | GatewayIntents::GUILD_VOICE_STATES;
+        | GatewayIntents::GUILD_VOICE_STATES
+        | GatewayIntents::GUILD_EMOJIS_AND_STICKERS;
 
     let framework = poise::Framework::new(poise::FrameworkOptions {
         commands: vec![

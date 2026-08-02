@@ -52,4 +52,14 @@ impl S3Client {
         let data = resp.body.collect().await?;
         Ok(data.into_bytes())
     }
+
+    pub async fn delete(&self, key: &str) -> Result<(), s3::Error> {
+        self.client
+            .delete_object()
+            .bucket(&self.bucket)
+            .key(key)
+            .send()
+            .await?;
+        Ok(())
+    }
 }

@@ -1,10 +1,11 @@
+mod birthdays;
 mod soundboards;
 
 use topcoat::{
     Result,
-    context::CxBuilder,
+    context::{Cx, CxBuilder},
     icon::{icon, iconify::iconify_icon},
-    router::{Body, Next, Response, error::redirect, layer, layout},
+    router::{Body, Next, Response, error::redirect, layer, layout, uri},
     view::{attributes, view},
 };
 
@@ -30,7 +31,8 @@ async fn require_auth(cx: &mut CxBuilder, body: Body, next: Next<'_>) -> Result<
 }
 
 #[layout]
-async fn root_layout(slot: Result) -> Result {
+async fn root_layout(cx: &Cx, slot: Result) -> Result {
+    let uri = uri(cx);
     return view! {
         <div class="flex min-h-dvh">
             sidebar(
@@ -46,10 +48,18 @@ async fn root_layout(slot: Result) -> Result {
                             sidebar_menu(
                                 sidebar_menu_item(
                                     sidebar_menu_button(
-                                        attrs: attributes! { href="/" },
-                                        is_active: true,
-                                        icon(data: iconify_icon!("feather:disc"))
+                                        attrs: attributes! { href="/soundboards" },
+                                        is_active: uri.path() == "/soundboards",
+                                        icon(data: iconify_icon!("feather:play"))
                                         "Soundboards"
+                                    )
+                                )
+                                sidebar_menu_item(
+                                    sidebar_menu_button(
+                                        attrs: attributes! { href="/birthdays" },
+                                        is_active: uri.path() == "/birthdays",
+                                        icon(data: iconify_icon!("feather:calendar"))
+                                        "Birthdays"
                                     )
                                 )
                             )

@@ -1,8 +1,7 @@
-use crate::Context as PoiseContext;
 use crate::models::archived_soundboards;
 use poise::serenity_prelude as serenity;
 
-use serenity::all::{CreateAttachment, CreateSoundboard, GuildId};
+use serenity::all::{CreateAttachment, CreateSoundboard, EmojiId, GuildId};
 
 pub async fn perform_restore(
     db: &toasty::Db,
@@ -40,8 +39,14 @@ pub async fn perform_restore(
     let mime = detect_audio_mime(&bytes);
     let attachment = CreateAttachment::bytes(bytes, "sound");
     let sound = attachment.encode(mime).await?;
+    let mut create = CreateSoundboard::new(&record.name, sound);
+    if let Some(emoji_id) = &record.emoji_id {
+        create = create.emoji_id(EmojiId::new(emoji_id.parse()?));
+    } else if let Some(emoji_name) = &record.emoji_name {
+        create = create.emoji_name(emoji_name);
+    }
     let created = http
-        .create_guild_soundboard(guild_id, &CreateSoundboard::new(&record.name, sound), None)
+        .create_guild_soundboard(guild_id, &create, None)
         .await?;
 
     record
@@ -59,23 +64,4 @@ pub fn detect_audio_mime(bytes: &[u8]) -> &'static str {
     } else {
         "audio/mpeg"
     }
-}
-
-#[poise::command(slash_command)]
-pub async fn restore(
-    ctx: PoiseContext<'_>,
-    #[description = "ID of the archived soundboard"] id: String,
-) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let guild_id = match ctx.guild_id() {
-        Some(g) => g,
-        None => {
-            ctx.say("This command must be run in a guild").await?;
-            return Ok(());
-        }
-    };
-
-    let message =
-        perform_restore(&ctx.data().db, &ctx.data().s3, ctx.http(), guild_id, &id).await?;
-    ctx.say(message).await?;
-    Ok(())
 }

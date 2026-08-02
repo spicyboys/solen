@@ -3,7 +3,7 @@ use topcoat::{
     context::{Cx, app_context},
     icon::{icon, iconify::iconify_icon},
     router::{
-        error::{SeeOther, internal_server_error, not_found, see_other},
+        error::{SeeOther, not_found, see_other},
         {Body, Response, header, layout, page, path_param, route},
     },
     runtime::Event,
@@ -25,15 +25,15 @@ struct SoundId(String);
 
 #[page]
 pub(crate) async fn index(cx: &Cx) -> Result {
-    auth::require_auth(cx).await?;
     let ctx = app_context::<WebContext>(cx);
     let mut db = ctx.data.db.clone();
 
-    let records = archived_soundboards::Model::all()
-        .exec(&mut db)
-        .await
-        .map_err(internal_server_error)?;
+    let records = archived_soundboards::Model::all().exec(&mut db).await?;
     let installed_soundboards = ctx.http.get_guild_soundboards(constants::GUILD_ID).await?;
+    let guild_members = ctx
+        .http
+        .get_guild_members(constants::GUILD_ID, None, None)
+        .await?;
 
     view! {
         <div class="flex flex-col gap-4">
@@ -41,6 +41,7 @@ pub(crate) async fn index(cx: &Cx) -> Result {
                 table(
                     table_header(
                         table_row(
+                            table_head("Emoji")
                             table_head("Name")
                             table_head("Uploaded by")
                             table_head("Preview")
@@ -51,14 +52,23 @@ pub(crate) async fn index(cx: &Cx) -> Result {
                         for record in records {
                             table_row(
                                 table_cell(
+                                    soundboard_emoji(
+                                        emoji_id: record.emoji_id.clone(),
+                                        emoji_name: record.emoji_name.clone()
+                                    )
+                                )
+                                table_cell(
                                     attrs: attributes! { class="font-medium" },
                                     (record.name)
                                 )
                                 table_cell(
                                     (record
                                         .original_uploader
-                                        .clone()
-                                        .unwrap_or_else(|| "unknown".to_owned()))
+                                        .and_then(|u| {
+                                            guild_members.iter().find(|g| g.user.id.to_string() == u)
+                                        })
+                                        .map(|u| u.display_name())
+                                        .unwrap_or_else(|| "unknown"))
                                 )
                                 table_cell(
                                     preview_soundboard(sound_id: record.sound_id.clone())
@@ -125,6 +135,26 @@ async fn preview_soundboard(sound_id: String) -> Result {
     }
 }
 
+/// The emoji for a soundboard: a custom emoji image, a unicode character,
+/// or a placeholder when neither was archived.
+#[component]
+async fn soundboard_emoji(emoji_id: Option<String>, emoji_name: Option<String>) -> Result {
+    if let Some(emoji_id) = emoji_id {
+        let alt = emoji_name.unwrap_or_default();
+        return view! {
+            <img
+                src=(format!(
+                    "https://cdn.discordapp.com/emojis/{emoji_id}.png?size=32"
+                ))
+                alt=(alt.clone())
+                title=(alt)
+                class="size-5"
+            />
+        };
+    }
+    view! { (emoji_name.unwrap_or_else(|| "\u{2013}".to_owned())) }
+}
+
 #[route(POST "/soundboards/{sound_id}/restore")]
 pub(crate) async fn restore(cx: &Cx) -> Result<SeeOther> {
     auth::require_auth(cx).await?;
@@ -139,29 +169,21 @@ pub(crate) async fn restore(cx: &Cx) -> Result<SeeOther> {
     )
     .await
     .map_err(|error| anyhow::anyhow!("{error}"))?;
-    Ok(see_other("/"))
+    Ok(see_other("/dashboard"))
 }
 
 #[route(GET "/soundboards/{sound_id}/preview")]
 pub(crate) async fn preview(cx: &Cx) -> Result<Response> {
-    auth::require_auth(cx).await?;
     let sound_id = path_param::<SoundId>(cx)?;
     let ctx = app_context::<WebContext>(cx);
     let mut db = ctx.data.db.clone();
     let record = archived_soundboards::Model::filter_by_sound_id(sound_id.clone())
         .first()
         .exec(&mut db)
-        .await
-        .map_err(internal_server_error)?
+        .await?
         .ok_or_else(not_found)?;
 
-    let bytes = ctx
-        .data
-        .s3
-        .download_bytes(&record.s3_key)
-        .await
-        .map_err(internal_server_error)?;
-
+    let bytes = ctx.data.s3.download_bytes(&record.s3_key).await?;
     let mime = crate::commands::detect_audio_mime(&bytes);
 
     Ok(Response::builder()

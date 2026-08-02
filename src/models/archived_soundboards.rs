@@ -8,4 +8,6 @@ pub struct Model {
     pub name: String,
     pub s3_key: String,
     pub original_uploader: Option<String>,
+    pub emoji_id: Option<String>,
+    pub emoji_name: Option<String>,
 }

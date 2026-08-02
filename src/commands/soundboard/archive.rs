@@ -1,3 +1,5 @@
+use poise::serenity_prelude::Soundboard;
+
 use crate::Context as PoiseContext;
 use crate::models::archived_soundboards;
 
@@ -20,31 +22,28 @@ pub async fn archive(
 
     // Skip if already archived
     let mut db = ctx.data().db.clone();
-    let archived_soundboard_ids = archived_soundboards::Model::all()
-        .exec(&mut db)
-        .await?
-        .into_iter()
-        .map(|a| a.sound_id)
-        .collect::<Vec<_>>();
+    let models = archived_soundboards::Model::all().exec(&mut db).await?;
 
     let mut count = 0;
     for sb in sbs {
-        let sound_id = sb.id.to_string();
+        let sb = ctx.http().get_guild_soundboard(guild_id, sb.id).await?;
 
-        if archived_soundboard_ids.contains(&sound_id) {
-            continue;
+        if let Some(model) = models.iter().find(|m| m.sound_id == sb.id.to_string()) {
+            // We explicitly do not update the `original_uploader` here since it
+            // might have been restored via the bot.
+            model
+                .clone()
+                .update()
+                .name(sb.name)
+                .emoji_id(sb.emoji_id.map(|e| e.to_string()))
+                .emoji_name(sb.emoji_name)
+                .exec(&mut db)
+                .await?;
+        } else {
+            archive_soundboard(&mut db, &ctx.data().s3, &sb).await?;
+
+            count += 1;
         }
-
-        archive_soundboard(
-            &mut db,
-            &ctx.data().s3,
-            &sound_id,
-            &sb.name,
-            sb.user.map(|u| u.id.to_string()),
-        )
-        .await?;
-
-        count += 1;
     }
 
     ctx.reply(format!("Successfully archived {} soundboards", count))
@@ -55,15 +54,13 @@ pub async fn archive(
 pub async fn archive_soundboard(
     db: &mut toasty::Db,
     s3: &crate::s3::S3Client,
-    sound_id: &str,
-    name: &str,
-    original_uploader: Option<String>,
+    soundboard: &Soundboard,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let key = format!("soundboards/{}", sound_id);
+    let key = format!("soundboards/{}", soundboard.id);
 
     let soundboard_data = reqwest::get(format!(
         "https://cdn.discordapp.com/soundboard-sounds/{}",
-        sound_id
+        soundboard.id
     ))
     .await?
     .bytes()
@@ -71,14 +68,21 @@ pub async fn archive_soundboard(
 
     s3.upload_bytes(&key, soundboard_data).await?;
 
-    // let mut connection = db.connection().await?;
-    toasty::create!(archived_soundboards::Model {
-        sound_id: sound_id.to_string(),
-        name: name.to_string(),
-        s3_key: key,
-        original_uploader,
+    match toasty::create!(archived_soundboards::Model {
+        s3_key: &key,
+        sound_id: soundboard.id.to_string(),
+        name: soundboard.name.to_string(),
+        original_uploader: soundboard.user.as_ref().map(|u| u.id.to_string()),
+        emoji_id: soundboard.emoji_id.map(|e| e.to_string()),
+        emoji_name: soundboard.emoji_name.clone(),
     })
     .exec(db)
-    .await?;
-    Ok(())
+    .await
+    {
+        Ok(_) => Ok(()),
+        Err(e) => {
+            s3.delete(&key).await?;
+            Err(Box::new(e))
+        }
+    }
 }
