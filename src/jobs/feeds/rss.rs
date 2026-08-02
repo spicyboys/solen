@@ -1,8 +1,7 @@
 use anyhow::{Context, Result};
 use bytes::Bytes;
-use html2md::TagHandlerFactory;
+use html_to_markdown_rs::{ConversionOptions, convert};
 use poise::serenity_prelude as serenity;
-use std::collections::HashMap;
 
 use serenity::all::{CreateEmbed, CreateMessage};
 
@@ -43,7 +42,7 @@ pub fn build_message<'a>(item: &'a rss::Item) -> Result<CreateMessage<'a>> {
 
     let description = item.content().or_else(|| item.description());
     if let Some(description) = description {
-        embed = embed.description(truncate_description(&parse_html(description)));
+        embed = embed.description(truncate_description(&parse_html(description)?));
     }
 
     Ok(CreateMessage::new().embed(embed))
@@ -72,21 +71,9 @@ pub(super) fn truncate_description(description: &str) -> String {
     format!("{truncated}{EMBED_DESCRIPTION_TRUNCATION_NOTICE}")
 }
 
-struct DummyHandlerFactory;
-
-impl TagHandlerFactory for DummyHandlerFactory {
-    fn instantiate(&self) -> Box<dyn html2md::TagHandler> {
-        Box::new(html2md::dummy::DummyHandler)
-    }
-}
-
-pub fn parse_html(html: &str) -> String {
-    let mut map = HashMap::new();
-    map.insert(
-        "img".to_string(),
-        Box::new(DummyHandlerFactory) as Box<dyn TagHandlerFactory>,
-    );
-    html2md::parse_html_custom(html, &map)
+pub fn parse_html(html: &str) -> Result<String> {
+    let options = ConversionOptions::builder().skip_images(true).build();
+    Ok(convert(html, Some(options))?.content.unwrap_or_default().trim_end().to_string())
 }
 
 #[cfg(test)]
@@ -97,7 +84,7 @@ mod tests {
     #[test]
     fn test_parse_html() {
         let html = r#"<p>This is a <strong>test</strong> description with an image: <img src="image.png" alt="An image"></p>"#;
-        let md = parse_html(html);
+        let md = parse_html(html).unwrap();
         assert_eq!(md, "This is a **test** description with an image:");
     }
 

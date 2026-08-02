@@ -1,10 +1,12 @@
 mod commands;
+mod components;
 mod constants;
 mod events;
 mod jobs;
 mod models;
 mod s3;
 mod settings;
+mod web;
 
 use std::sync::Arc;
 
@@ -27,6 +29,12 @@ type Context<'a> = poise::Context<'a, Data, Error>;
 #[tokio::main]
 async fn main() {
     dotenv().ok();
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
+        )
+        .init();
     let settings = settings::Settings::load().expect("Failed to load settings");
 
     rustls::crypto::aws_lc_rs::default_provider()
@@ -38,6 +46,7 @@ async fn main() {
             models::birthdays::Model,
             models::feeds::Model,
             models::archived_soundboards::Model,
+            models::web_sessions::Model,
         ))
         .build(Connect::new(&settings.database_url).await.unwrap())
         .await
@@ -65,12 +74,12 @@ async fn main() {
 
     let mut client = ClientBuilder::new(token, intents)
         .data(data.clone())
-        .event_handler(Arc::new(events::Handler::new(data)))
+        .event_handler(Arc::new(events::Handler::new(data.clone())))
         .framework(Box::new(framework))
         .await
         .expect("Err creating client");
 
-    let sched = JobScheduler::new().await.unwrap();
+    let mut sched = JobScheduler::new().await.unwrap();
     jobs::schedule(
         &sched,
         jobs::JobContext {
@@ -85,9 +94,69 @@ async fn main() {
 
     sched.start().await.expect("Failed to start scheduler");
 
+    let listener = tokio::net::TcpListener::bind((settings.web.host.as_str(), settings.web.port))
+        .await
+        .expect("Failed to bind web listener");
+    println!(
+        "Starting web server on {}:{}",
+        settings.web.host, settings.web.port
+    );
+    tracing::info!(
+        host = %settings.web.host,
+        port = settings.web.port,
+        secure_cookies = settings.web.secure_cookies,
+        oauth_redirect_uri = %settings.discord_oauth.redirect_uri,
+        "web server starting"
+    );
+    let web_ctx = web::WebContext {
+        data: data.clone(),
+        http: client.http.clone(),
+        oauth: settings.discord_oauth,
+        secure_cookies: settings.web.secure_cookies,
+        client: reqwest::Client::new(),
+    };
+    let router = web::router(web_ctx);
+    tokio::spawn(async move {
+        if let Err(error) = topcoat::serve(listener, router).await {
+            eprintln!("Web server error: {error}");
+        }
+    });
+
     println!("Starting discord client...");
 
-    if let Err(why) = client.start().await {
-        println!("Client error: {why:?}");
+    let shutdown_discord = client.shard_manager.get_shutdown_trigger();
+
+    tokio::select! {
+        result = client.start() => {
+            if let Err(why) = result {
+                println!("Client error: {why:?}");
+            }
+        }
+        _ = shutdown_signal() => {
+            println!("Shutdown signal received, stopping...");
+            shutdown_discord();
+            if let Err(error) = sched.shutdown().await {
+                eprintln!("Scheduler shutdown error: {error:?}");
+            }
+        }
+    }
+}
+
+async fn shutdown_signal() {
+    let ctrl_c = tokio::signal::ctrl_c();
+
+    #[cfg(unix)]
+    let terminate = async {
+        tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+            .expect("failed to install the SIGTERM signal handler")
+            .recv()
+            .await;
+    };
+    #[cfg(not(unix))]
+    let terminate = std::future::pending::<()>();
+
+    tokio::select! {
+        _ = ctrl_c => {}
+        _ = terminate => {}
     }
 }

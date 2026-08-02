@@ -9,14 +9,21 @@ async-trait = "0.1"
 chrono = "0.4.42"
 chrono-tz = "0.10.4"
 dotenvy = "0.15.0"
-html2md = "0.2.15"
+html-to-markdown-rs = "3.10"
 poise = { git = "https://github.com/serenity-rs/poise", branch = "serenity-next" }
 rand = "0.10"
 regex = "1.13"
-reqwest = "0.13"
+reqwest = { version = "0.13", features = ["json", "form"] }
 rss = "2.1"
-tokio = { version = "1.53", features = ["macros", "rt-multi-thread"] }
+tokio = { version = "1.53", features = ["macros", "rt-multi-thread", "net"] }
 tokio-cron-scheduler = "0.15.1"
+topcoat = { version = "0.5", features = [
+    "tailwind",
+    "ui",
+    "font-fontsource",
+    "icon-iconify",
+] }
+inventory = "0.3.24"
 url = "2.5.8"
 serde = "1.0"
 serde_json = "1.0"
@@ -26,3 +33,11 @@ aws-sdk-s3 = "1.132.0"
 config = "0.15.25"
 rustls = "0.23.43"
 toasty = { version = "0.9.0", features = ["postgresql"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[build-dependencies]
+topcoat = { version = "0.5.0", default-features = false, features = [
+    "tailwind",
+    "icon-iconify",
+] }

@@ -1,0 +1,158 @@
+use crate::components::button::{ButtonSize, ButtonVariant, button};
+use crate::components::table::{
+    table, table_body, table_cell, table_head, table_header, table_row,
+};
+use topcoat::Result;
+use topcoat::context::{Cx, app_context};
+use topcoat::icon::{icon, iconify::iconify_icon};
+use topcoat::router::error::{SeeOther, internal_server_error, not_found, see_other};
+use topcoat::router::{Body, Response, header, layout, page, path_param, route};
+use topcoat::runtime::Event;
+use topcoat::view::{attributes, component, view};
+
+use crate::constants;
+use crate::models::archived_soundboards;
+use crate::web::WebContext;
+use crate::web::auth;
+
+#[path_param(error = not_found)]
+struct SoundId(String);
+
+#[page("/soundboards")]
+pub(crate) async fn index(cx: &Cx) -> Result {
+    auth::require_auth(cx).await?;
+    let ctx = app_context::<WebContext>(cx);
+    let mut db = ctx.data.db.clone();
+
+    let records = archived_soundboards::Model::all()
+        .exec(&mut db)
+        .await
+        .map_err(internal_server_error)?;
+    let installed_soundboards = ctx.http.get_guild_soundboards(constants::GUILD_ID).await?;
+
+    view! {
+        <div class="flex flex-col gap-4">
+            <div class="rounded-md border border-border">
+                table(
+                    table_header(
+                        table_row(
+                            table_head("Name")
+                            table_head("Uploaded by")
+                            table_head("Preview")
+                            table_head("Actions")
+                        )
+                    )
+                    table_body(
+                        for record in records {
+                            table_row(
+                                table_cell(
+                                    attrs: attributes! { class="font-medium" },
+                                    (record.name)
+                                )
+                                table_cell(
+                                    (record.original_uploader.clone().unwrap_or_else(|| "unknown".to_owned()))
+                                )
+                                table_cell(
+                                    preview_soundboard(sound_id: record.sound_id.clone())
+                                )
+                                table_cell(
+                                    <form
+                                        id=(format!("restore-{}", record.sound_id))
+                                        method="post"
+                                        action=(format!("/soundboards/{}/restore", record.sound_id))
+                                    >
+                                    </form>
+                                    button(
+                                        variant: ButtonVariant::Outline,
+                                        size: ButtonSize::Sm,
+                                        attrs: attributes! {
+                                            type="submit"
+                                            form=(format!("restore-{}", record.sound_id))
+                                            disabled=(installed_soundboards.iter().any(|s| s.id.to_string() == record.sound_id))
+                                        },
+                                        "Restore"
+                                    )
+                                )
+                            )
+                        }
+                    )
+                )
+            </div>
+        </div>
+    }
+}
+
+#[layout("/soundboards")]
+async fn layout(slot: Result) -> Result {
+    view! {
+        <header class="sticky top-0 z-10 flex h-14 shrink-0 items-center gap-2 border-b border-border bg-background px-4 lg:h-[60px] lg:px-6">
+            <h1 class="text-lg font-semibold">"Soundboards"</h1>
+            <p class="text-sm text-muted-foreground">
+                "Archived soundboards from the server."
+            </p>
+        </header>
+        <main class="flex-1 p-4 lg:p-6">(slot?)</main>
+    }
+}
+
+/// A play button for a soundboard's preview audio.
+#[component]
+async fn preview_soundboard(sound_id: String) -> Result {
+    view! {
+        button(
+            variant: ButtonVariant::Outline,
+            size: ButtonSize::Icon,
+            attrs: attributes! {
+                @click=$(|_e: Event| raw!(
+                    "new Audio('/soundboards/' + ${sound_id} + '/preview').play()"
+                ))
+            },
+            icon(data: iconify_icon!("feather:play"))
+        )
+    }
+}
+
+#[route(POST "/soundboards/{sound_id}/restore")]
+pub(crate) async fn restore(cx: &Cx) -> Result<SeeOther> {
+    auth::require_auth(cx).await?;
+    let sound_id = path_param::<SoundId>(cx)?;
+    let ctx = app_context::<WebContext>(cx);
+    crate::commands::perform_restore(
+        &ctx.data.db,
+        &ctx.data.s3,
+        &ctx.http,
+        constants::GUILD_ID,
+        sound_id,
+    )
+    .await
+    .map_err(|error| anyhow::anyhow!("{error}"))?;
+    Ok(see_other("/"))
+}
+
+#[route(GET "/soundboards/{sound_id}/preview")]
+pub(crate) async fn preview(cx: &Cx) -> Result<Response> {
+    auth::require_auth(cx).await?;
+    let sound_id = path_param::<SoundId>(cx)?;
+    let ctx = app_context::<WebContext>(cx);
+    let mut db = ctx.data.db.clone();
+    let record = archived_soundboards::Model::filter_by_sound_id(sound_id.clone())
+        .first()
+        .exec(&mut db)
+        .await
+        .map_err(internal_server_error)?
+        .ok_or_else(not_found)?;
+
+    let bytes = ctx
+        .data
+        .s3
+        .download_bytes(&record.s3_key)
+        .await
+        .map_err(internal_server_error)?;
+
+    let mime = crate::commands::detect_audio_mime(&bytes);
+
+    Ok(Response::builder()
+        .header(header::CONTENT_TYPE, mime)
+        .body(Body::from(bytes))
+        .expect("preview response should build"))
+}

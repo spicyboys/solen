@@ -53,7 +53,7 @@ pub async fn perform_restore(
     Ok(format!("Restored archived soundboard as {}", record.name))
 }
 
-fn detect_audio_mime(bytes: &[u8]) -> &'static str {
+pub fn detect_audio_mime(bytes: &[u8]) -> &'static str {
     if bytes.starts_with(b"OggS") {
         "audio/ogg"
     } else {
