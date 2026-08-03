@@ -1,3 +1,5 @@
+use std::str::FromStr;
+
 use anyhow::Result;
 use chrono::Datelike;
 use chrono_tz::US::Central;
@@ -26,7 +28,7 @@ pub async fn send_birthday_message(ctx: JobContext) -> Result<()> {
     }
 
     for birthday in birthdays {
-        let user_id = UserId::new(birthday.user_id.parse::<u64>()?);
+        let user_id = UserId::from_str(&birthday.user_id)?;
 
         let content = MessageBuilder::new()
             .push("GIVE IT UP FOR ")
