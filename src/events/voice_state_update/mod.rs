@@ -1,13 +1,19 @@
 use poise::serenity_prelude::{
     CacheHttp, ChannelId, ChannelType, Context, GuildChannel, GuildId, VoiceState,
 };
+use toasty::Db;
 
 mod soundboard_manager;
 
-pub async fn handle_voice_state_update(ctx: &Context, old: Option<&VoiceState>, new: &VoiceState) {
+pub async fn handle_voice_state_update(
+    db: &mut Db,
+    ctx: &Context,
+    old: Option<&VoiceState>,
+    new: &VoiceState,
+) {
     // Handle user connecting to a new channel
     if let Some(channel) = get_voice_channel(ctx, new.channel_id, new.guild_id).await {
-        soundboard_manager::handle_connection(ctx, channel).await;
+        soundboard_manager::handle_connection(ctx, db, channel).await;
     }
 
     // Handle user disconnecting from a channel
@@ -15,7 +21,7 @@ pub async fn handle_voice_state_update(ctx: &Context, old: Option<&VoiceState>, 
         && let Some(channel) =
             get_voice_channel(ctx, old_state.channel_id, old_state.guild_id).await
     {
-        soundboard_manager::handle_disconnection(ctx, channel).await;
+        soundboard_manager::handle_disconnection(ctx, db, channel).await;
     }
 }
 

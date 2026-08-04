@@ -1,16 +1,19 @@
+use std::sync::Arc;
+
 use aws_config::BehaviorVersion;
 use aws_sdk_s3::{self as s3, Client};
 use bytes::Bytes;
 
-use crate::settings::S3Settings;
+use crate::config::S3Config;
 
+#[derive(Clone)]
 pub struct S3Client {
     client: Client,
-    bucket: String,
+    bucket: Arc<String>,
 }
 
 impl S3Client {
-    pub async fn new(settings: S3Settings) -> S3Client {
+    pub async fn new(settings: S3Config) -> S3Client {
         let config = aws_config::defaults(BehaviorVersion::latest())
             .endpoint_url(settings.endpoint)
             .credentials_provider(aws_sdk_s3::config::Credentials::new(
@@ -26,14 +29,14 @@ impl S3Client {
 
         S3Client {
             client: s3::Client::new(&config),
-            bucket: settings.bucket,
+            bucket: Arc::new(settings.bucket),
         }
     }
 
     pub async fn upload_bytes(&self, key: &str, bytes: Bytes) -> Result<(), s3::Error> {
         self.client
             .put_object()
-            .bucket(&self.bucket)
+            .bucket(self.bucket.as_str())
             .key(key)
             .body(bytes.into())
             .send()
@@ -45,7 +48,7 @@ impl S3Client {
         let resp = self
             .client
             .get_object()
-            .bucket(&self.bucket)
+            .bucket(self.bucket.as_str())
             .key(key)
             .send()
             .await?;
@@ -56,7 +59,7 @@ impl S3Client {
     pub async fn delete(&self, key: &str) -> Result<(), s3::Error> {
         self.client
             .delete_object()
-            .bucket(&self.bucket)
+            .bucket(self.bucket.as_str())
             .key(key)
             .send()
             .await?;

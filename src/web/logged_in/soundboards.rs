@@ -26,12 +26,14 @@ struct SoundId(String);
 #[page]
 pub(crate) async fn index(cx: &Cx) -> Result {
     let ctx = app_context::<WebContext>(cx);
-    let mut db = ctx.data.db.clone();
+    let mut db = ctx.db.clone();
 
     let (records_res, installed_soundboards_res, guild_members_res) = tokio::join!(
         archived_soundboards::Model::all().exec(&mut db),
-        ctx.http.get_guild_soundboards(constants::GUILD_ID),
-        ctx.http.get_guild_members(constants::GUILD_ID, None, None)
+        ctx.discord_client
+            .get_guild_soundboards(constants::GUILD_ID),
+        ctx.discord_client
+            .get_guild_members(constants::GUILD_ID, None, None)
     );
     let records = records_res?;
     let installed_soundboards = installed_soundboards_res?;
@@ -163,9 +165,9 @@ pub(crate) async fn restore(cx: &Cx) -> Result<SeeOther> {
     let sound_id = path_param::<SoundId>(cx)?;
     let ctx = app_context::<WebContext>(cx);
     crate::commands::perform_restore(
-        &ctx.data.db,
-        &ctx.data.s3,
-        &ctx.http,
+        &ctx.db,
+        &ctx.s3,
+        &ctx.discord_client,
         constants::GUILD_ID,
         sound_id,
     )
@@ -178,14 +180,14 @@ pub(crate) async fn restore(cx: &Cx) -> Result<SeeOther> {
 pub(crate) async fn preview(cx: &Cx) -> Result<Response> {
     let sound_id = path_param::<SoundId>(cx)?;
     let ctx = app_context::<WebContext>(cx);
-    let mut db = ctx.data.db.clone();
+    let mut db = ctx.db.clone();
     let record = archived_soundboards::Model::filter_by_sound_id(sound_id.clone())
         .first()
         .exec(&mut db)
         .await?
         .ok_or_else(not_found)?;
 
-    let bytes = ctx.data.s3.download_bytes(&record.s3_key).await?;
+    let bytes = ctx.s3.download_bytes(&record.s3_key).await?;
     let mime = crate::commands::detect_audio_mime(&bytes);
 
     Ok(Response::builder()

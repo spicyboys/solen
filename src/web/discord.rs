@@ -1,8 +1,8 @@
 use serde::Deserialize;
 
-use crate::settings::DiscordOauthSettings;
+use crate::config::DiscordOauthConfig;
 
-pub fn authorize_url(oauth: &DiscordOauthSettings, state: &str) -> String {
+pub fn authorize_url(oauth: &DiscordOauthConfig, state: &str) -> String {
     let mut url = url::Url::parse("https://discord.com/oauth2/authorize")
         .expect("static Discord authorize URL is valid");
     url.query_pairs_mut()
@@ -30,7 +30,7 @@ pub struct Identity {
 }
 
 pub async fn authenticate(
-    oauth: &DiscordOauthSettings,
+    oauth: &DiscordOauthConfig,
     client: &reqwest::Client,
     code: &str,
 ) -> anyhow::Result<Identity> {

@@ -32,7 +32,7 @@ async fn layout(slot: Result) -> Result {
 #[page]
 pub(crate) async fn index(cx: &Cx) -> Result {
     let ctx = app_context::<WebContext>(cx);
-    let mut db = ctx.data.db.clone();
+    let mut db = ctx.db.clone();
 
     let records = feeds::Model::all().exec(&mut db).await?;
 
@@ -54,7 +54,7 @@ pub(crate) async fn index(cx: &Cx) -> Result {
                                     attrs: attributes! { class="font-medium" },
                                     channel_display_name(
                                         channel_id: record.channel_id,
-                                        discord: ctx.http.clone()
+                                        discord_client: &ctx.discord_client
                                     )
                                 )
                                 table_cell(
@@ -75,8 +75,11 @@ pub(crate) async fn index(cx: &Cx) -> Result {
 }
 
 #[component]
-async fn channel_display_name(channel_id: String, discord: Arc<serenity::http::Http>) -> Result {
-    let channel = discord
+async fn channel_display_name(
+    channel_id: String,
+    discord_client: &Arc<serenity::http::Http>,
+) -> Result {
+    let channel = discord_client
         .get_channel(GenericChannelId::from_str(&channel_id)?)
         .await?;
 

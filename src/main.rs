@@ -1,8 +1,8 @@
 mod commands;
 mod components;
+mod config;
 mod constants;
 mod events;
-mod feature_toggles;
 mod jobs;
 mod models;
 mod s3;
@@ -19,13 +19,13 @@ use tokio_cron_scheduler::JobScheduler;
 
 use crate::s3::S3Client;
 
-pub struct Data {
+pub struct DiscordClientContext {
     pub db: Db,
     pub s3: s3::S3Client,
 }
 
 type Error = Box<dyn std::error::Error + Send + Sync>;
-type Context<'a> = poise::Context<'a, Data, Error>;
+type Context<'a> = poise::Context<'a, DiscordClientContext, Error>;
 
 #[tokio::main]
 async fn main() {
@@ -36,7 +36,7 @@ async fn main() {
                 .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
         )
         .init();
-    let settings = settings::Settings::load().expect("Failed to load settings");
+    let config = config::AppConfig::load().expect("Failed to load config");
 
     rustls::crypto::aws_lc_rs::default_provider()
         .install_default()
@@ -48,18 +48,13 @@ async fn main() {
             models::feeds::Model,
             models::archived_soundboards::Model,
             models::web_sessions::Model,
-            models::feature_toggles::Model,
+            models::settings::Model,
         ))
-        .build(Connect::new(&settings.database_url).await.unwrap())
+        .build(Connect::new(&config.database_url).await.unwrap())
         .await
         .unwrap();
 
-    open_feature::OpenFeature::singleton_mut()
-        .await
-        .set_provider(feature_toggles::FeatureToggleProvider::new(db.clone()))
-        .await;
-
-    let token = Token::try_from(settings.discord_token.clone()).expect("Invalid bot token");
+    let token = Token::try_from(config.discord_token.clone()).expect("Invalid bot token");
     let intents = GatewayIntents::GUILD_MESSAGES
         | GatewayIntents::MESSAGE_CONTENT
         | GatewayIntents::GUILDS
@@ -75,9 +70,11 @@ async fn main() {
         ..Default::default()
     });
 
-    let data = Arc::new(Data {
+    let s3 = S3Client::new(config.s3).await;
+
+    let data = Arc::new(DiscordClientContext {
         db: db.clone(),
-        s3: S3Client::new(settings.s3).await,
+        s3: s3.clone(),
     });
 
     let mut client = ClientBuilder::new(token, intents)
@@ -92,7 +89,7 @@ async fn main() {
         &sched,
         jobs::JobContext {
             discord_http: client.http.clone(),
-            db,
+            db: db.clone(),
         },
     )
     .await
@@ -102,26 +99,27 @@ async fn main() {
 
     sched.start().await.expect("Failed to start scheduler");
 
-    let listener = tokio::net::TcpListener::bind((settings.web.host.as_str(), settings.web.port))
+    let listener = tokio::net::TcpListener::bind((config.web.host.as_str(), config.web.port))
         .await
         .expect("Failed to bind web listener");
     println!(
         "Starting web server on {}:{}",
-        settings.web.host, settings.web.port
+        config.web.host, config.web.port
     );
     tracing::info!(
-        host = %settings.web.host,
-        port = settings.web.port,
-        secure_cookies = settings.web.secure_cookies,
-        oauth_redirect_uri = %settings.discord_oauth.redirect_uri,
+        host = %config.web.host,
+        port = config.web.port,
+        secure_cookies = config.web.secure_cookies,
+        oauth_redirect_uri = %config.discord_oauth.redirect_uri,
         "web server starting"
     );
     let web_ctx = web::WebContext {
-        data: data.clone(),
-        http: client.http.clone(),
-        oauth: settings.discord_oauth,
-        secure_cookies: settings.web.secure_cookies,
+        db,
+        s3,
+        discord_client: client.http.clone(),
         client: reqwest::Client::new(),
+        web_config: config.web,
+        discord_oauth_config: config.discord_oauth,
     };
     let router = web::router(web_ctx);
     tokio::spawn(async move {

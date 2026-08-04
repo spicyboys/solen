@@ -2,6 +2,6 @@
 
 pub mod archived_soundboards;
 pub mod birthdays;
-pub mod feature_toggles;
 pub mod feeds;
+pub mod settings;
 pub mod web_sessions;

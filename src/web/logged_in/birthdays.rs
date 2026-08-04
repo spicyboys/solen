@@ -27,11 +27,12 @@ async fn layout(slot: Result) -> Result {
 #[page]
 pub(crate) async fn index(cx: &Cx) -> Result {
     let ctx = app_context::<WebContext>(cx);
-    let mut db = ctx.data.db.clone();
+    let mut db = ctx.db.clone();
 
     let (records_res, guild_members_res) = tokio::join!(
         birthdays::Model::all().exec(&mut db),
-        ctx.http.get_guild_members(constants::GUILD_ID, None, None),
+        ctx.discord_client
+            .get_guild_members(constants::GUILD_ID, None, None),
     );
     let records = records_res?;
     let guild_members = guild_members_res?;

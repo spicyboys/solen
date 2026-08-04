@@ -8,14 +8,14 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use poise::serenity_prelude::{self as serenity, EventHandler, FullEvent};
 
-use crate::Data;
+use crate::DiscordClientContext;
 
 pub struct Handler {
-    data: Arc<Data>,
+    data: Arc<DiscordClientContext>,
 }
 
 impl Handler {
-    pub fn new(data: Arc<Data>) -> Self {
+    pub fn new(data: Arc<DiscordClientContext>) -> Self {
         Handler { data }
     }
 }
@@ -31,7 +31,9 @@ impl EventHandler for Handler {
                 thread_create::handle_thread_create(ctx, thread).await;
             }
             FullEvent::VoiceStateUpdate { old, new, .. } => {
-                voice_state_update::handle_voice_state_update(ctx, old.as_ref(), new).await;
+                let mut db = self.data.db.clone();
+                voice_state_update::handle_voice_state_update(&mut db, ctx, old.as_ref(), new)
+                    .await;
             }
             FullEvent::SoundboardSoundCreate { event, .. } => {
                 soundboard::handle_soundboard_sound_create(&self.data, event).await;

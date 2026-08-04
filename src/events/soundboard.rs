@@ -2,12 +2,15 @@ use poise::serenity_prelude::Soundboard;
 use poise::serenity_prelude::all::{SoundboardSoundCreateEvent, SoundboardSoundUpdateEvent};
 use tracing::{debug, error};
 
-use crate::Data;
+use crate::DiscordClientContext;
 use crate::commands::archive_soundboard;
 use crate::constants::BOT_ID;
 use crate::models::archived_soundboards;
 
-pub async fn handle_soundboard_sound_create(data: &Data, event: &SoundboardSoundCreateEvent) {
+pub async fn handle_soundboard_sound_create(
+    data: &DiscordClientContext,
+    event: &SoundboardSoundCreateEvent,
+) {
     if event
         .soundboard
         .user
@@ -21,7 +24,10 @@ pub async fn handle_soundboard_sound_create(data: &Data, event: &SoundboardSound
     }
 }
 
-pub async fn handle_soundboard_sound_update(data: &Data, event: &SoundboardSoundUpdateEvent) {
+pub async fn handle_soundboard_sound_update(
+    data: &DiscordClientContext,
+    event: &SoundboardSoundUpdateEvent,
+) {
     let sound_id = event.soundboard.id.to_string();
 
     let mut db = data.db.clone();
@@ -55,7 +61,7 @@ pub async fn handle_soundboard_sound_update(data: &Data, event: &SoundboardSound
     }
 }
 
-async fn handle_unarchived_soundboard(data: &Data, soundboard: &Soundboard) {
+async fn handle_unarchived_soundboard(data: &DiscordClientContext, soundboard: &Soundboard) {
     if let Err(e) = archive_soundboard(&mut data.db.clone(), &data.s3, soundboard).await {
         error!("Failed to archive soundboard {}: {:?}", soundboard.id, e);
     }

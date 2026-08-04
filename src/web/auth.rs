@@ -91,7 +91,7 @@ pub async fn current_user_id(cx: &Cx) -> Option<String> {
         .duration_since(UNIX_EPOCH)
         .map(|duration| duration.as_secs() as i64)
         .unwrap_or(i64::MAX);
-    let mut db = app_context::<WebContext>(cx).data.db.clone();
+    let mut db = app_context::<WebContext>(cx).db.clone();
     let record = match web_sessions::Model::filter_by_token_hash(hash_to_hex(&hash))
         .first()
         .exec(&mut db)
@@ -141,9 +141,9 @@ pub(crate) async fn oauth_discord(cx: &Cx) -> Result<SeeOther> {
         .override_http_only(true)
         .override_same_site(SameSite::Lax)
         .override_path("/")
-        .override_secure(ctx.secure_cookies)
+        .override_secure(ctx.web_config.secure_cookies)
         .add(Cookie::new(OAUTH_STATE_COOKIE, state.clone()));
-    let url = discord::authorize_url(&ctx.oauth, &state);
+    let url = discord::authorize_url(&ctx.discord_oauth_config, &state);
     info!("starting discord oauth, redirecting to {}", url);
     Ok(see_other(&url))
 }
@@ -184,10 +184,10 @@ pub(crate) async fn oauth_callback(cx: &Cx) -> Result<SeeOther> {
     }
     cookies(cx)
         .override_path("/")
-        .override_secure(ctx.secure_cookies)
+        .override_secure(ctx.web_config.secure_cookies)
         .remove(Cookie::new(OAUTH_STATE_COOKIE, ""));
 
-    let identity = match discord::authenticate(&ctx.oauth, &ctx.client, code).await {
+    let identity = match discord::authenticate(&ctx.discord_oauth_config, &ctx.client, code).await {
         Ok(identity) => identity,
         Err(error) => {
             warn!("oauth callback rejected: discord authenticate failed: {error:?}");
@@ -220,7 +220,7 @@ pub(crate) async fn oauth_callback(cx: &Cx) -> Result<SeeOther> {
         .map(|duration| duration.as_secs() as i64)
         .unwrap_or(0);
     let user_id = identity.user.id;
-    let mut db = ctx.data.db.clone();
+    let mut db = ctx.db.clone();
     toasty::create!(web_sessions::Model {
         token_hash: hash_to_hex(&session.token_hash),
         user_id: user_id.clone(),
@@ -242,7 +242,7 @@ pub(crate) async fn oauth_callback(cx: &Cx) -> Result<SeeOther> {
 #[route(GET "/logout")]
 pub(crate) async fn logout(cx: &Cx) -> Result<SeeOther> {
     if let Some(hash) = stop(cx).await? {
-        let mut db = app_context::<WebContext>(cx).data.db.clone();
+        let mut db = app_context::<WebContext>(cx).db.clone();
         let _ = web_sessions::Model::filter_by_token_hash(hash_to_hex(&hash))
             .delete()
             .exec(&mut db)

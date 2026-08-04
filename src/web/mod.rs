@@ -8,6 +8,7 @@ use std::sync::Arc;
 
 use poise::serenity_prelude as serenity;
 use reqwest::Client as HttpClient;
+use toasty::Db;
 use topcoat::{
     Result,
     asset::{AssetBundle, RouterBuilderAssetExt},
@@ -23,21 +24,25 @@ use topcoat::{
     view::view,
 };
 
-use crate::settings::DiscordOauthSettings;
+use crate::{
+    config::{DiscordOauthConfig, WebServerConfig},
+    s3::S3Client,
+};
 
 use auth::SessionCookieStore;
 
 pub struct WebContext {
-    pub data: Arc<crate::Data>,
-    pub http: Arc<serenity::http::Http>,
-    pub oauth: DiscordOauthSettings,
-    pub secure_cookies: bool,
+    pub db: Db,
+    pub s3: S3Client,
+    pub discord_client: Arc<serenity::http::Http>,
     pub client: HttpClient,
+    pub web_config: WebServerConfig,
+    pub discord_oauth_config: DiscordOauthConfig,
 }
 
 pub fn router(ctx: WebContext) -> Router {
     let session_config = SessionConfig::builder()
-        .token_store(SessionCookieStore::new(ctx.secure_cookies))
+        .token_store(SessionCookieStore::new(ctx.web_config.secure_cookies))
         .build();
 
     module_router!()
