@@ -3200,7 +3200,6 @@ dependencies = [
  "config",
  "dotenvy",
  "html-to-markdown-rs",
- "inventory",
  "poise",
  "rand 0.10.2",
  "regex",

@@ -24,7 +24,6 @@ topcoat = { version = "0.5", features = [
     "font-fontsource",
     "icon-iconify",
 ] }
-inventory = "0.3.24"
 url = "2.5.8"
 serde = "1.0"
 serde_json = "1.0"
