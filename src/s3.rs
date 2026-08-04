@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
-use aws_config::BehaviorVersion;
-use aws_sdk_s3::{self as s3, Client};
+use anyhow::Result;
 use bytes::Bytes;
+use s3::{AddressingStyle, Auth, Client, Credentials};
 
 use crate::config::S3Config;
 
@@ -13,54 +13,46 @@ pub struct S3Client {
 }
 
 impl S3Client {
-    pub async fn new(settings: S3Config) -> S3Client {
-        let config = aws_config::defaults(BehaviorVersion::latest())
-            .endpoint_url(settings.endpoint)
-            .credentials_provider(aws_sdk_s3::config::Credentials::new(
-                settings.access_key_id,
-                settings.secret_access_key,
-                None, // session token is not used with R2
-                None,
-                "R2",
-            ))
-            .region("auto") // Required by SDK but not used by R2
-            .load()
-            .await;
+    pub async fn new(settings: S3Config) -> Result<S3Client> {
+        let credentials = Credentials::new(settings.access_key_id, settings.secret_access_key)?;
+        let client = Client::builder(settings.endpoint)?
+            .region("auto") // Required for signing but not used by R2
+            .auth(Auth::Static(credentials))
+            .addressing_style(AddressingStyle::Path)
+            .build()?;
 
-        S3Client {
-            client: s3::Client::new(&config),
+        Ok(S3Client {
+            client,
             bucket: Arc::new(settings.bucket),
-        }
+        })
     }
 
     pub async fn upload_bytes(&self, key: &str, bytes: Bytes) -> Result<(), s3::Error> {
         self.client
-            .put_object()
-            .bucket(self.bucket.as_str())
-            .key(key)
-            .body(bytes.into())
+            .objects()
+            .put(self.bucket.as_str(), key)
+            .body_bytes(bytes)
             .send()
             .await?;
         Ok(())
     }
 
     pub async fn download_bytes(&self, key: &str) -> anyhow::Result<Bytes> {
-        let resp = self
+        let data = self
             .client
-            .get_object()
-            .bucket(self.bucket.as_str())
-            .key(key)
+            .objects()
+            .get(self.bucket.as_str(), key)
             .send()
+            .await?
+            .bytes()
             .await?;
-        let data = resp.body.collect().await?;
-        Ok(data.into_bytes())
+        Ok(data)
     }
 
     pub async fn delete(&self, key: &str) -> Result<(), s3::Error> {
         self.client
-            .delete_object()
-            .bucket(self.bucket.as_str())
-            .key(key)
+            .objects()
+            .delete(self.bucket.as_str(), key)
             .send()
             .await?;
         Ok(())

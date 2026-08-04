@@ -70,7 +70,9 @@ async fn main() {
         ..Default::default()
     });
 
-    let s3 = S3Client::new(config.s3).await;
+    let s3 = S3Client::new(config.s3)
+        .await
+        .expect("Failed to create S3 client");
 
     let data = Arc::new(DiscordClientContext {
         db: db.clone(),
