@@ -6,7 +6,7 @@ use toasty::Db;
 
 use crate::models::settings;
 
-trait Setting: Default + for<'a> Deserialize<'a> + Serialize {
+pub trait Setting: Default + for<'a> Deserialize<'a> + Serialize {
     const KEY: &'static str;
 }
 

@@ -1,6 +1,5 @@
 use topcoat::{
     Result,
-    context::Cx,
     icon::{icon, iconify::iconify_icon},
     view::{Attributes, View, class, component, view},
 };
