@@ -30,12 +30,7 @@ type Context<'a> = poise::Context<'a, DiscordClientContext, Error>;
 #[tokio::main]
 async fn main() {
     dotenv().ok();
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
-        )
-        .init();
+    tracing_subscriber::fmt().init();
     let config = config::AppConfig::load().expect("Failed to load config");
 
     rustls::crypto::aws_lc_rs::default_provider()
@@ -70,9 +65,7 @@ async fn main() {
         ..Default::default()
     });
 
-    let s3 = S3Client::new(config.s3)
-        .await
-        .expect("Failed to create S3 client");
+    let s3 = S3Client::new(config.s3).await;
 
     let data = Arc::new(DiscordClientContext {
         db: db.clone(),
